@@ -1,0 +1,38 @@
+[package]
+name = "httpsig-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Implementation of IETF draft of http message signatures"
+authors = ["Jun Kurihara"]
+homepage = "https://github.com/junkurihara/httpsig-rs"
+repository = "https://github.com/junkurihara/httpsig-rs"
+license = "MIT"
+readme = "../README.md"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# serde = { version = "1.0.193", default-features = false, features = ["derive"] }
+# serde_json = "1.0.108"
+anyhow = { version = "1.0.77" }
+tracing = { version = "0.1.40" }
+
+# crypto
+pkcs8 = { version = "0.10.2", default-features = false, features = ["pem"] }
+spki = { version = "0.7.3", default-features = false, features = ["pem"] }
+sec1 = { version = "0.7.3", default-features = false, features = ["der"] }
+ed25519-compact = { version = "2.0.6", default-features = false, features = [
+  "random",
+] }
+ecdsa = { version = "0.16.9", default-features = false, features = [
+  "arithmetic",
+] }
+p256 = { version = "0.13.2", default-features = false, features = [
+  "arithmetic",
+  "ecdsa",
+] }
+sha2 = { version = "0.10.8", default-features = false }
+
+# encoding
+base64 = { version = "0.21.5" }
