@@ -1,4 +1,6 @@
 mod algorithm;
-mod key;
+mod asymmetric;
+mod symmetric;
 
-pub use key::{PublicKey, SecretKey};
+pub use asymmetric::{PublicKey, SecretKey};
+pub use symmetric::SymmetricKey;

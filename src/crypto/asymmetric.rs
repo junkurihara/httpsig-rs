@@ -41,12 +41,10 @@ pub enum SecretKey {
 }
 
 impl SecretKey {
-  /// Derive secret key from pem string
-  pub fn from_pem(pem: &str) -> Result<Self> {
-    let (tag, doc) = Document::from_pem(pem).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
-    ensure!(tag == "PRIVATE KEY", "Invalid tag");
-
-    let pki = PrivateKeyInfo::from_der(doc.as_bytes()).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
+  /// parse der
+  /// Derive secret key from der bytes
+  pub fn from_der(der: &[u8]) -> Result<Self> {
+    let pki = PrivateKeyInfo::from_der(der).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
 
     match pki.algorithm.oid.to_string().as_ref() {
       // ec
@@ -83,6 +81,13 @@ impl SecretKey {
       }
       _ => bail!("Unsupported algorithm that supports PEM format keys"),
     }
+  }
+
+  /// Derive secret key from pem string
+  pub fn from_pem(pem: &str) -> Result<Self> {
+    let (tag, doc) = Document::from_pem(pem).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
+    ensure!(tag == "PRIVATE KEY", "Invalid tag");
+    Self::from_der(doc.as_bytes())
   }
 
   /// Sign data
