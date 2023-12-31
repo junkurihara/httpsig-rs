@@ -81,7 +81,7 @@ impl SecretKey {
         let sk = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed)).sk;
         Ok(Self::Ed25519(sk))
       }
-      _ => bail!("Unsupported algorithm"),
+      _ => bail!("Unsupported algorithm that supports PEM format keys"),
     }
   }
 
@@ -174,7 +174,7 @@ impl PublicKey {
           .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
         Ok(Self::Ed25519(pk))
       }
-      _ => bail!("Unsupported algorithm"),
+      _ => bail!("Unsupported algorithm that supports PEM format keys"),
     }
   }
 
