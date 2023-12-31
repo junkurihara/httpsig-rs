@@ -5,8 +5,9 @@ use ecdsa::{
 };
 use ed25519_compact::{PublicKey as Ed25519PublicKey, SecretKey as Ed25519SecretKey};
 use p256::NistP256;
+use p384::NistP384;
 use pkcs8::{der::Decode, Document, PrivateKeyInfo};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha384};
 use spki::SubjectPublicKeyInfoRef;
 use tracing::debug;
 
@@ -21,15 +22,19 @@ mod algorithm_oids {
 #[allow(non_upper_case_globals, dead_code)]
 /// Params OIDs
 mod params_oids {
-  // Example parameters value: OID for the NIST P-256 elliptic curve.
-  pub const Prime256v1: &str = "1.2.840.10045.3.1.7";
+  // OID for the NIST P-256 elliptic curve.
+  pub const Secp256r1: &str = "1.2.840.10045.3.1.7";
+  // OID for the NIST P-384 elliptic curve.
+  pub const Secp384r1: &str = "1.3.132.0.34";
 }
 
 /* -------------------------------- */
 /// Secret key for http signature
 /// Name conventions follow [the IETF draft](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#section-6.2.2)
 pub enum SecretKey {
-  /// ecdsa-p256
+  /// ecdsa-p384-sha384
+  EcdsaP384Sha384(EcSecretKey<NistP384>),
+  /// ecdsa-p256-sha256
   EcdsaP256Sha256(EcSecretKey<NistP256>),
   /// ed25519
   Ed25519(Ed25519SecretKey),
@@ -51,14 +56,19 @@ impl SecretKey {
           .algorithm
           .parameters_oid()
           .map_err(|e| anyhow!("Error decoding private key: {}", e))?;
+        let sk_bytes = sec1::EcPrivateKey::try_from(pki.private_key)
+          .map_err(|e| anyhow!("Error decoding EcPrivateKey: {e}"))?
+          .private_key;
         match param.to_string().as_ref() {
-          params_oids::Prime256v1 => {
-            let sk_bytes = sec1::EcPrivateKey::try_from(pki.private_key)
-              .map_err(|e| anyhow!("Error decoding EcPrivateKey: {e}"))?
-              .private_key;
+          params_oids::Secp256r1 => {
             let sk =
               p256::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
             Ok(Self::EcdsaP256Sha256(sk))
+          }
+          params_oids::Secp384r1 => {
+            let sk =
+              p384::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
+            Ok(Self::EcdsaP384Sha384(sk))
           }
           _ => bail!("Unsupported curve"),
         }
@@ -85,6 +95,13 @@ impl SecretKey {
         let sig: ecdsa::Signature<NistP256> = sk.sign_digest(digest);
         Ok(sig.to_bytes().to_vec())
       }
+      Self::EcdsaP384Sha384(sk) => {
+        let sk = ecdsa::SigningKey::from(sk);
+        let mut digest = Sha384::default();
+        digest.update(data);
+        let sig: ecdsa::Signature<NistP384> = sk.sign_digest(digest);
+        Ok(sig.to_bytes().to_vec())
+      }
       Self::Ed25519(sk) => {
         let sig = sk.sign(data, Some(ed25519_compact::Noise::default()));
         Ok(sig.as_ref().to_vec())
@@ -96,6 +113,7 @@ impl SecretKey {
   pub fn public_key(&self) -> PublicKey {
     match &self {
       Self::EcdsaP256Sha256(key) => PublicKey::EcdsaP256Sha256(key.public_key()),
+      Self::EcdsaP384Sha384(key) => PublicKey::EcdsaP384Sha384(key.public_key()),
       Self::Ed25519(key) => PublicKey::Ed25519(key.public_key()),
     }
   }
@@ -107,6 +125,8 @@ impl SecretKey {
 pub enum PublicKey {
   /// ecdsa-p256-sha256
   EcdsaP256Sha256(EcPublicKey<NistP256>),
+  /// ecdsa-p384-sha384
+  EcdsaP384Sha384(EcPublicKey<NistP384>),
   /// ed25519
   Ed25519(Ed25519PublicKey),
 }
@@ -126,16 +146,20 @@ impl PublicKey {
           .algorithm
           .parameters_oid()
           .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
+        let public_key = spki_ref
+          .subject_public_key
+          .as_bytes()
+          .ok_or(anyhow!("Invalid public key"))?;
         match param.to_string().as_ref() {
-          // prime256v1 = es256
-          params_oids::Prime256v1 => {
-            let public_key = spki_ref
-              .subject_public_key
-              .as_bytes()
-              .ok_or(anyhow!("Invalid public key"))?;
+          params_oids::Secp256r1 => {
             let pk = EcPublicKey::<NistP256>::from_sec1_bytes(public_key)
               .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
             Ok(Self::EcdsaP256Sha256(pk))
+          }
+          params_oids::Secp384r1 => {
+            let pk = EcPublicKey::<NistP384>::from_sec1_bytes(public_key)
+              .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
+            Ok(Self::EcdsaP384Sha384(pk))
           }
           _ => bail!("Unsupported curve"),
         }
@@ -166,6 +190,15 @@ impl PublicKey {
         vk.verify_digest(digest, &signature)
           .map_err(|e| anyhow!("Error verifying signature: {}", e))
       }
+      Self::EcdsaP384Sha384(pk) => {
+        let signature = ecdsa::Signature::<NistP384>::from_bytes(signature.into())
+          .map_err(|e| anyhow!("Error decoding signature: {}", e))?;
+        let vk = ecdsa::VerifyingKey::from(pk);
+        let mut digest = Sha384::default();
+        digest.update(data);
+        vk.verify_digest(digest, &signature)
+          .map_err(|e| anyhow!("Error verifying signature: {}", e))
+      }
       Self::Ed25519(pk) => {
         let sig =
           ed25519_compact::Signature::from_slice(signature).map_err(|e| anyhow!("Error decoding signature: {}", e))?;
@@ -181,6 +214,7 @@ impl PublicKey {
 
     let bytes = match self {
       Self::EcdsaP256Sha256(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
+      Self::EcdsaP384Sha384(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
       Self::Ed25519(vk) => vk.as_ref().to_vec(),
     };
     let mut hasher = <Sha256 as Digest>::new();
@@ -195,11 +229,39 @@ mod tests {
   use super::*;
   use std::matches;
 
-  const P256_SECERT_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgv7zxW56ojrWwmSo1\n4uOdbVhUfj9Jd+5aZIB9u8gtWnihRANCAARGYsMe0CT6pIypwRvoJlLNs4+cTh2K\nL7fUNb5i6WbKxkpAoO+6T3pMBG5Yw7+8NuGTvvtrZAXduA2giPxQ8zCf\n-----END PRIVATE KEY-----";
-  const P256_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERmLDHtAk+qSMqcEb6CZSzbOPnE4d\nii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==\n-----END PUBLIC KEY-----\n";
+  const P256_SECERT_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgv7zxW56ojrWwmSo1
+4uOdbVhUfj9Jd+5aZIB9u8gtWnihRANCAARGYsMe0CT6pIypwRvoJlLNs4+cTh2K
+L7fUNb5i6WbKxkpAoO+6T3pMBG5Yw7+8NuGTvvtrZAXduA2giPxQ8zCf
+-----END PRIVATE KEY-----
+"##;
+  const P256_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERmLDHtAk+qSMqcEb6CZSzbOPnE4d
+ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
+-----END PUBLIC KEY-----
+"##;
+  const P384_SECERT_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+MIG2AgEAMBAGByqGSM49AgEGBSuBBAAiBIGeMIGbAgEBBDCPYbeLLlIQKUzVyVGH
+MeuFp/9o2Lr+4GrI3bsbHuViMMceiuM+8xqzFCSm4Ltl5UyhZANiAARKg3yM+Ltx
+n4ZptF3hI6Q167crEtPRklCEsRTyWUqy+VrrnM5LU/+fqxVbyniBZHd4vmQVYtjF
+xsv8P3DpjvpKJZqFfVdIr2ZR+kYDKHwIruIF9fCPawAH2tnbuc3xEzQ=
+-----END PRIVATE KEY-----
+"##;
+  const P384_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
+MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAESoN8jPi7cZ+GabRd4SOkNeu3KxLT0ZJQ
+hLEU8llKsvla65zOS1P/n6sVW8p4gWR3eL5kFWLYxcbL/D9w6Y76SiWahX1XSK9m
+UfpGAyh8CK7iBfXwj2sAB9rZ27nN8RM0
+-----END PUBLIC KEY-----
+"##;
 
-  const EDDSA_SECRET_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C\n-----END PRIVATE KEY-----";
-  const EDDSA_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=\n-----END PUBLIC KEY-----\n";
+  const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
+-----END PRIVATE KEY-----
+"##;
+  const EDDSA_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
+-----END PUBLIC KEY-----
+"##;
 
   #[test]
   fn test_from_pem() {
@@ -207,6 +269,11 @@ mod tests {
     assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY).unwrap();
     assert!(matches!(pk, PublicKey::EcdsaP256Sha256(_)));
+
+    let sk = SecretKey::from_pem(P384_SECERT_KEY).unwrap();
+    assert!(matches!(sk, SecretKey::EcdsaP384Sha384(_)));
+    let pk = PublicKey::from_pem(P384_PUBLIC_KEY).unwrap();
+    assert!(matches!(pk, PublicKey::EcdsaP384Sha384(_)));
 
     let sk = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
     assert!(matches!(sk, SecretKey::Ed25519(_)));
@@ -218,6 +285,13 @@ mod tests {
   fn test_sign_verify() {
     let sk = SecretKey::from_pem(P256_SECERT_KEY).unwrap();
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY).unwrap();
+    let data = b"hello world";
+    let signature = sk.sign(data).unwrap();
+    pk.verify(data, &signature).unwrap();
+    assert!(pk.verify(b"hello", &signature).is_err());
+
+    let sk = SecretKey::from_pem(P384_SECERT_KEY).unwrap();
+    let pk = PublicKey::from_pem(P384_PUBLIC_KEY).unwrap();
     let data = b"hello world";
     let signature = sk.sign(data).unwrap();
     pk.verify(data, &signature).unwrap();
@@ -237,6 +311,11 @@ mod tests {
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY)?;
     assert_eq!(sk.public_key().key_id(), pk.key_id());
     assert_eq!(pk.key_id(), "k34r3Nqfak67bhJSXTjTRo5tCIr1Bsre1cPoJ3LJ9xE");
+
+    let sk = SecretKey::from_pem(P384_SECERT_KEY)?;
+    let pk = PublicKey::from_pem(P384_PUBLIC_KEY)?;
+    assert_eq!(sk.public_key().key_id(), pk.key_id());
+    assert_eq!(pk.key_id(), "JluSJKLaQsbGcgg1Ves4FfP_Kf7qS11RT88TvU0eNSo");
 
     let sk = SecretKey::from_pem(EDDSA_SECRET_KEY)?;
     let pk = PublicKey::from_pem(EDDSA_PUBLIC_KEY)?;
