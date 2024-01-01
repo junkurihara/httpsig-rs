@@ -1,3 +1,4 @@
+use super::MINIMUM_SYMMETRIC_KEY_LENGTH;
 use anyhow::Result;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -15,15 +16,15 @@ pub enum SecretKey {
 /// Symmetric key
 pub struct SymmetricKey {
   /// Key value
-  pub key: Vec<u8>,
+  pub inner: Vec<u8>,
 }
 
-impl From<&[u8]> for SecretKey {
+impl From<&[u8]> for SymmetricKey {
   fn from(value: &[u8]) -> Self {
-    match value.len() {
-      32 => SecretKey::HmacSha256(SymmetricKey { key: value.to_vec() }),
-      _ => panic!("Unsupported key length"),
+    if value.len() < MINIMUM_SYMMETRIC_KEY_LENGTH {
+      panic!("Key length is too short (minimum: {})", MINIMUM_SYMMETRIC_KEY_LENGTH);
     }
+    SymmetricKey { inner: value.to_vec() }
   }
 }
 
@@ -32,7 +33,7 @@ impl SecretKey {
   pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
     match self {
       SecretKey::HmacSha256(key) => {
-        let mut mac = HmacSha256::new_from_slice(&key.key).unwrap();
+        let mut mac = HmacSha256::new_from_slice(&key.inner).unwrap();
         mac.update(data);
         Ok(mac.finalize().into_bytes().to_vec())
       }
@@ -54,7 +55,7 @@ impl SecretKey {
     match self {
       SecretKey::HmacSha256(key) => {
         let mut hasher = <Sha256 as Digest>::new();
-        hasher.update(&key.key);
+        hasher.update(&key.inner);
         let hash = hasher.finalize();
         general_purpose::URL_SAFE_NO_PAD.encode(hash)
       }
@@ -68,7 +69,8 @@ mod tests {
 
   #[test]
   fn symmetric_key_works() {
-    let key = SymmetricKey { key: vec![1, 2, 3] };
+    let inner = b"01234567890123456789012345678901";
+    let key = SymmetricKey::from(inner.as_slice());
     let sk = SecretKey::HmacSha256(key);
     let data = b"hello";
     let signature = sk.sign(data).unwrap();
