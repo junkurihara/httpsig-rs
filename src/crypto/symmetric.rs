@@ -38,15 +38,13 @@ impl SecretKey {
       }
     }
   }
-  /// Verify the signature
-  pub fn verify(&self, data: &[u8], signature: &[u8]) -> Result<()> {
-    match self {
-      SecretKey::HmacSha256(key) => {
-        let mut mac = HmacSha256::new_from_slice(&key.key).unwrap();
-        mac.update(data);
-        mac.verify(signature.into()).map_err(|e| anyhow::anyhow!(e))?;
-        Ok(())
-      }
+  /// Verify the mac
+  pub fn verify(&self, data: &[u8], expected_mac: &[u8]) -> Result<()> {
+    let calcurated_mac = self.sign(data)?;
+    if calcurated_mac == expected_mac {
+      Ok(())
+    } else {
+      Err(anyhow::anyhow!("Invalid mac"))
     }
   }
 
