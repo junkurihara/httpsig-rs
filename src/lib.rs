@@ -1,6 +1,9 @@
 mod crypto;
+mod message_component;
+mod signature_base;
 mod signature_params;
 mod trace;
+mod util;
 
 use crate::{
   crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
@@ -29,7 +32,7 @@ MCowBQYDK2VwAyEAJrQLj5P/89iXES9+vFgrIy29clF9CC/oPPsw3c5D0bs=
 "@signature-params": ("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
   const SIGNATURE_VALUE: &str =
     "wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==";
-  const SIGNATURE_RESULT: &str = r##"Signature-Input: sig-b26=("date" "@method" "@path" "@authority" \
+  const _SIGNATURE_RESULT: &str = r##"Signature-Input: sig-b26=("date" "@method" "@path" "@authority" \
   "content-type" "content-length");created=1618884473\
   ;keyid="test-key-ed25519"
 Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
