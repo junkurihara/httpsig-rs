@@ -12,7 +12,7 @@ pub enum SharedKey {
   HmacSha256(Vec<u8>),
 }
 
-impl super::Signer for SharedKey {
+impl super::SigningKey for SharedKey {
   /// Sign the data
   fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
     match self {
@@ -25,14 +25,19 @@ impl super::Signer for SharedKey {
   }
   /// Get the key id
   fn key_id(&self) -> String {
-    use super::Verifier;
-    <Self as Verifier>::key_id(self)
+    use super::VerifyingKey;
+    <Self as VerifyingKey>::key_id(self)
+  }
+  /// Get the algorithm name
+  fn alg(&self) -> String {
+    use super::VerifyingKey;
+    <Self as VerifyingKey>::alg(self)
   }
 }
-impl super::Verifier for SharedKey {
+impl super::VerifyingKey for SharedKey {
   /// Verify the mac
   fn verify(&self, data: &[u8], expected_mac: &[u8]) -> Result<()> {
-    use super::Signer;
+    use super::SigningKey;
     let calcurated_mac = self.sign(data)?;
     if calcurated_mac == expected_mac {
       Ok(())
@@ -47,10 +52,16 @@ impl super::Verifier for SharedKey {
     match self {
       SharedKey::HmacSha256(key) => {
         let mut hasher = <Sha256 as Digest>::new();
-        hasher.update(&key);
+        hasher.update(key);
         let hash = hasher.finalize();
         general_purpose::URL_SAFE_NO_PAD.encode(hash)
       }
+    }
+  }
+  /// Get the algorithm name
+  fn alg(&self) -> String {
+    match self {
+      SharedKey::HmacSha256(_) => "hmac-sha256".to_string(),
     }
   }
 }
@@ -61,7 +72,7 @@ mod tests {
 
   #[test]
   fn symmetric_key_works() {
-    use super::super::{Signer, Verifier};
+    use super::super::{SigningKey, VerifyingKey};
     let inner = b"01234567890123456789012345678901";
     let key = SharedKey::HmacSha256(inner.to_vec());
     let data = b"hello";

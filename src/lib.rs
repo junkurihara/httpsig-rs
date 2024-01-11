@@ -1,8 +1,11 @@
 mod crypto;
-use crypto::{PublicKey, SecretKey, Signer, Verifier};
-pub fn test() {
-  println!("Hello, world!");
-}
+mod signature_params;
+mod trace;
+
+use crate::{
+  crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
+  signature_params::{HttpSignatureParams, HttpSignatureParamsBuildConfig},
+};
 
 #[cfg(test)]
 mod tests {
@@ -33,10 +36,10 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
   u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:"##;
 
   #[test]
-  fn test() {
-    println!("{}", SIGNATURE_BASE);
-    println!("{}", SIGNATURE_VALUE);
-    println!("{}", SIGNATURE_RESULT);
+  fn test_using_test_vector() {
+    // println!("{}", SIGNATURE_BASE);
+    // println!("{}", SIGNATURE_VALUE);
+    // println!("{}", SIGNATURE_RESULT);
 
     let sk = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
     let pk = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
@@ -49,9 +52,16 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
 
     let signature = sk.sign(SIGNATURE_BASE.as_bytes()).unwrap();
     let signature_value = general_purpose::STANDARD.encode(signature);
-    println!("{}", signature_value);
+    // println!("{}", signature_value);
     let signature_bytes = general_purpose::STANDARD.decode(signature_value).unwrap();
     let verification_result = pk.verify(SIGNATURE_BASE.as_bytes(), &signature_bytes);
     assert!(verification_result.is_ok());
+  }
+
+  #[test]
+  fn test_http_signature_params() {
+    let signature_params_str = r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
+    let signature_params = HttpSignatureParams::try_from(signature_params_str).unwrap();
+    assert_eq!(signature_params.to_string(), signature_params_str);
   }
 }

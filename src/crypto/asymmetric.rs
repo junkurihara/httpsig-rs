@@ -100,7 +100,7 @@ impl SecretKey {
   }
 }
 
-impl super::Signer for SecretKey {
+impl super::SigningKey for SecretKey {
   /// Sign data
   fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
     match &self {
@@ -126,18 +126,27 @@ impl super::Signer for SecretKey {
   }
 
   fn key_id(&self) -> String {
-    use super::Verifier;
+    use super::VerifyingKey;
     self.public_key().key_id()
+  }
+
+  fn alg(&self) -> String {
+    use super::VerifyingKey;
+    self.public_key().alg()
   }
 }
 
-impl super::Verifier for SecretKey {
+impl super::VerifyingKey for SecretKey {
   fn verify(&self, data: &[u8], signature: &[u8]) -> Result<()> {
     self.public_key().verify(data, signature)
   }
 
   fn key_id(&self) -> String {
     self.public_key().key_id()
+  }
+
+  fn alg(&self) -> String {
+    self.public_key().alg()
   }
 }
 
@@ -201,7 +210,7 @@ impl PublicKey {
   }
 }
 
-impl super::Verifier for PublicKey {
+impl super::VerifyingKey for PublicKey {
   /// Verify signature
   fn verify(&self, data: &[u8], signature: &[u8]) -> Result<()> {
     match self {
@@ -245,6 +254,15 @@ impl super::Verifier for PublicKey {
     hasher.update(&bytes);
     let hash = hasher.finalize();
     general_purpose::URL_SAFE_NO_PAD.encode(hash)
+  }
+
+  /// Get the algorithm name
+  fn alg(&self) -> String {
+    match self {
+      Self::EcdsaP256Sha256(_) => "ecdsa-p256-sha256".to_string(),
+      Self::EcdsaP384Sha384(_) => "ecdsa-p384-sha384".to_string(),
+      Self::Ed25519(_) => "ed25519".to_string(),
+    }
   }
 }
 
@@ -307,7 +325,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[test]
   fn test_sign_verify() {
-    use super::super::{Signer, Verifier};
+    use super::super::{SigningKey, VerifyingKey};
     let sk = SecretKey::from_pem(P256_SECERT_KEY).unwrap();
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY).unwrap();
     let data = b"hello world";
@@ -332,7 +350,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[test]
   fn test_kid() -> Result<()> {
-    use super::super::Verifier;
+    use super::super::VerifyingKey;
     let sk = SecretKey::from_pem(P256_SECERT_KEY)?;
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY)?;
     assert_eq!(sk.public_key().key_id(), pk.key_id());
