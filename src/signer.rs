@@ -1,10 +1,4 @@
-// image:
-// let signer = HttpSignatureSignerBuilder::default()
-//   .secret_key(SecretKey::HmacSha256(SymmetricKey::from(b"secret")))
-//   .xxx()
-//   .yyy()
-//   .build();
-// or
+// API design:
 // let signature_params = SignatureParamsBuilder::default()
 //   .created(1618884473)
 //   .key_id("test-key-ed25519") // Should key_id be set at signer builder?

@@ -90,19 +90,30 @@ impl SecretKey {
     Self::from_der(doc.as_bytes())
   }
 
+  /// Get public key from secret key
+  pub fn public_key(&self) -> PublicKey {
+    match &self {
+      Self::EcdsaP256Sha256(key) => PublicKey::EcdsaP256Sha256(key.public_key()),
+      Self::EcdsaP384Sha384(key) => PublicKey::EcdsaP384Sha384(key.public_key()),
+      Self::Ed25519(key) => PublicKey::Ed25519(key.public_key()),
+    }
+  }
+}
+
+impl super::Signer for SecretKey {
   /// Sign data
-  pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
+  fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
     match &self {
       Self::EcdsaP256Sha256(sk) => {
         let sk = ecdsa::SigningKey::from(sk);
-        let mut digest = Sha256::default();
+        let mut digest = <Sha256 as Digest>::new();
         digest.update(data);
         let sig: ecdsa::Signature<NistP256> = sk.sign_digest(digest);
         Ok(sig.to_bytes().to_vec())
       }
       Self::EcdsaP384Sha384(sk) => {
         let sk = ecdsa::SigningKey::from(sk);
-        let mut digest = Sha384::default();
+        let mut digest = <Sha384 as Digest>::new();
         digest.update(data);
         let sig: ecdsa::Signature<NistP384> = sk.sign_digest(digest);
         Ok(sig.to_bytes().to_vec())
@@ -114,13 +125,19 @@ impl SecretKey {
     }
   }
 
-  /// Get public key from secret key
-  pub fn public_key(&self) -> PublicKey {
-    match &self {
-      Self::EcdsaP256Sha256(key) => PublicKey::EcdsaP256Sha256(key.public_key()),
-      Self::EcdsaP384Sha384(key) => PublicKey::EcdsaP384Sha384(key.public_key()),
-      Self::Ed25519(key) => PublicKey::Ed25519(key.public_key()),
-    }
+  fn key_id(&self) -> String {
+    use super::Verifier;
+    self.public_key().key_id()
+  }
+}
+
+impl super::Verifier for SecretKey {
+  fn verify(&self, data: &[u8], signature: &[u8]) -> Result<()> {
+    self.public_key().verify(data, signature)
+  }
+
+  fn key_id(&self) -> String {
+    self.public_key().key_id()
   }
 }
 
@@ -182,15 +199,17 @@ impl PublicKey {
       _ => bail!("Unsupported algorithm that supports PEM format keys"),
     }
   }
+}
 
+impl super::Verifier for PublicKey {
   /// Verify signature
-  pub fn verify(&self, data: &[u8], signature: &[u8]) -> Result<()> {
+  fn verify(&self, data: &[u8], signature: &[u8]) -> Result<()> {
     match self {
       Self::EcdsaP256Sha256(pk) => {
         let signature = ecdsa::Signature::<NistP256>::from_bytes(signature.into())
           .map_err(|e| anyhow!("Error decoding signature: {}", e))?;
         let vk = ecdsa::VerifyingKey::from(pk);
-        let mut digest = Sha256::default();
+        let mut digest = <Sha256 as Digest>::new();
         digest.update(data);
         vk.verify_digest(digest, &signature)
           .map_err(|e| anyhow!("Error verifying signature: {}", e))
@@ -199,7 +218,7 @@ impl PublicKey {
         let signature = ecdsa::Signature::<NistP384>::from_bytes(signature.into())
           .map_err(|e| anyhow!("Error decoding signature: {}", e))?;
         let vk = ecdsa::VerifyingKey::from(pk);
-        let mut digest = Sha384::default();
+        let mut digest = <Sha384 as Digest>::new();
         digest.update(data);
         vk.verify_digest(digest, &signature)
           .map_err(|e| anyhow!("Error verifying signature: {}", e))
@@ -214,7 +233,7 @@ impl PublicKey {
   }
 
   /// Create key id
-  pub fn key_id(&self) -> String {
+  fn key_id(&self) -> String {
     use base64::{engine::general_purpose, Engine as _};
 
     let bytes = match self {
@@ -288,6 +307,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[test]
   fn test_sign_verify() {
+    use super::super::{Signer, Verifier};
     let sk = SecretKey::from_pem(P256_SECERT_KEY).unwrap();
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY).unwrap();
     let data = b"hello world";
@@ -312,6 +332,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[test]
   fn test_kid() -> Result<()> {
+    use super::super::Verifier;
     let sk = SecretKey::from_pem(P256_SECERT_KEY)?;
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY)?;
     assert_eq!(sk.public_key().key_id(), pk.key_id());

@@ -1,5 +1,5 @@
 mod crypto;
-use crypto::{PublicKey, SecretKey};
+use crypto::{PublicKey, SecretKey, Signer, Verifier};
 pub fn test() {
   println!("Hello, world!");
 }
