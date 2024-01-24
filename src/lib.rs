@@ -7,7 +7,7 @@ mod util;
 
 use crate::{
   crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
-  signature_params::{HttpSignatureParams, HttpSignatureParamsBuildConfig},
+  signature_params::{HttpSignatureParams, HttpSignatureParamsBuilder},
 };
 
 #[cfg(test)]

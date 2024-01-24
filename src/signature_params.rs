@@ -5,23 +5,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_EXPIRES_IN: u64 = 300;
 
+#[derive(Debug, Clone)]
 /// Struct defining Http message signature parameters
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-signature-parameters
 pub struct HttpSignatureParams {
   /// created unix timestamp.
-  created: Option<u64>,
+  pub(crate) created: Option<u64>,
   /// signature expires unix timestamp.
-  expires: Option<u64>,
+  pub(crate) expires: Option<u64>,
   /// nonce
-  nonce: Option<String>,
+  pub(crate) nonce: Option<String>,
   /// algorithm name
-  alg: Option<String>,
+  pub(crate) alg: Option<String>,
   /// key id.
-  keyid: Option<String>,
+  pub(crate) keyid: Option<String>,
   /// tag
-  tag: Option<String>,
+  pub(crate) tag: Option<String>,
   /// covered component vector string: ordered message components, i.e., string of http_fields and derived_components
-  covered_components: Vec<String>,
+  pub(crate) covered_components: Vec<String>,
 }
 
 impl std::fmt::Display for HttpSignatureParams {
@@ -99,9 +100,9 @@ impl TryFrom<&str> for HttpSignatureParams {
   }
 }
 
-/// Configuration for Http message signature parameters
+/// Builder of Http message signature parameters
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-signature-parameters
-pub struct HttpSignatureParamsBuildConfig {
+pub struct HttpSignatureParamsBuilder {
   /// created unix timestamp. if none and set_created = false, use current timestamp
   created: Option<u64>,
   /// if true, `created` is set.
@@ -126,7 +127,7 @@ pub struct HttpSignatureParamsBuildConfig {
   covered_components: Vec<HttpMessageComponentIdentifier>,
 }
 
-impl Default for HttpSignatureParamsBuildConfig {
+impl Default for HttpSignatureParamsBuilder {
   fn default() -> Self {
     Self {
       created: None,
@@ -143,14 +144,30 @@ impl Default for HttpSignatureParamsBuildConfig {
   }
 }
 
-impl HttpSignatureParamsBuildConfig {
+impl HttpSignatureParamsBuilder {
+  /// Set key id
+  pub fn key_id(&mut self, keyid: &str) -> &mut Self {
+    self.keyid = Some(keyid.to_string());
+    self
+  }
+  /// set algorithm
+  pub fn algorithm(&mut self, alg: &str) -> &mut Self {
+    self.alg = Some(alg.to_string());
+    self
+  }
   /// Set keyid and alg from the key
-  pub fn set_key_info(&mut self, key: &impl VerifyingKey) {
+  pub fn key_info(&mut self, key: &impl VerifyingKey) {
     self.keyid = Some(key.key_id().to_string());
     self.alg = Some(key.alg().to_string());
   }
+  /// Set artificial created
+  pub fn created(&mut self, created: u64) -> &mut Self {
+    self.created = Some(created);
+    self.set_created = true;
+    self
+  }
   /// Set covered components
-  pub fn set_covered_message_component_ids(&mut self, components: &[&str]) {
+  pub fn covered_message_component_ids(&mut self, components: &[&str]) {
     self.covered_components = components
       .iter()
       .map(|&c| HttpMessageComponentIdentifier::from(c))
@@ -167,8 +184,8 @@ impl HttpSignatureParamsBuildConfig {
   }
 
   /// Derive HttpSignatureParams object
-  pub fn derive_http_signature_params(&self) -> HttpSignatureParams {
-    let mut covered_components = self
+  pub fn build(&self) -> HttpSignatureParams {
+    let covered_components = self
       .covered_components
       .iter()
       .map(|c| c.to_string())
@@ -232,22 +249,22 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[test]
   fn test_set_key_info() {
-    let mut params = HttpSignatureParamsBuildConfig::default();
-    params.set_covered_message_component_ids(&["\"@method\"", "\"@path\";bs", "\"@authority\""]);
+    let mut params = HttpSignatureParamsBuilder::default();
+    params.covered_message_component_ids(&["\"@method\"", "\"@path\";bs", "\"@authority\""]);
     let x = vec!["\"@method\"", "\"@path\";bs", "\"@authority\""]
       .into_iter()
       .map(HttpMessageComponentIdentifier::from)
       .collect::<Vec<_>>();
     assert_eq!(params.covered_components, x);
-    params.set_key_info(&PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap());
+    params.key_info(&PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap());
     assert_eq!(params.keyid, Some(EDDSA_KEY_ID.to_string()));
     assert_eq!(params.alg, Some("ed25519".to_string()));
   }
 
   #[test]
   fn test_http_signature_params() {
-    let mut params = HttpSignatureParamsBuildConfig::default();
-    params.set_covered_message_component_ids(&[
+    let mut params = HttpSignatureParamsBuilder::default();
+    params.covered_message_component_ids(&[
       "\"@method\"",
       "\"@path\";bs",
       "\"@authority\"",
@@ -256,9 +273,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       "\"content-type\";bs",
       "\"content-length\"",
     ]);
-    params.set_key_info(&PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap());
+    params.key_info(&PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap());
 
-    let params = params.derive_http_signature_params();
+    let params = params.build();
     assert!(params.created.is_some());
     assert!(params.expires.is_none());
     assert!(params.nonce.is_none());

@@ -1,12 +1,13 @@
 use rustc_hash::FxHashSet as HashSet;
 
 /* ---------------------------------------------------------------- */
+#[derive(Debug, Clone)]
 /// Http message component
 pub(crate) struct HttpMessageComponent {
   /// Http message component identifier
-  id: HttpMessageComponentIdentifier,
+  pub(crate) id: HttpMessageComponentIdentifier,
   /// Http message component value
-  value: HttpMessageComponentValue,
+  pub(crate) value: HttpMessageComponentValue,
 }
 
 impl TryFrom<&str> for HttpMessageComponent {
@@ -15,11 +16,36 @@ impl TryFrom<&str> for HttpMessageComponent {
     let Some((id, value)) = val.split_once(':') else {
       return Err(anyhow::anyhow!("Invalid http message component: {}", val));
     };
+    let id = id.trim();
+    if ensure_component_id(id).is_err() {
+      return Err(anyhow::anyhow!("Invalid http message component id: {}", id));
+    }
     Ok(Self {
-      id: HttpMessageComponentIdentifier::from(id.trim()),
+      id: HttpMessageComponentIdentifier::from(id),
       value: HttpMessageComponentValue::from(value.trim()),
     })
   }
+}
+
+impl TryFrom<(&str, &str)> for HttpMessageComponent {
+  type Error = anyhow::Error;
+  fn try_from((k, v): (&str, &str)) -> std::result::Result<Self, anyhow::Error> {
+    let id = k.trim();
+    if ensure_component_id(id).is_err() {
+      return Err(anyhow::anyhow!("Invalid http message component id: {}", id));
+    }
+    Ok(Self {
+      id: HttpMessageComponentIdentifier::from(id),
+      value: HttpMessageComponentValue::from(v.trim()),
+    })
+  }
+}
+
+fn ensure_component_id(id: &str) -> anyhow::Result<()> {
+  if !id.starts_with('"') || !(id.ends_with('"') || id[1..].contains("\";")) {
+    return Err(anyhow::anyhow!("Invalid http message component id: {}", id));
+  }
+  Ok(())
 }
 
 impl std::fmt::Display for HttpMessageComponent {
@@ -31,6 +57,7 @@ impl std::fmt::Display for HttpMessageComponent {
 }
 
 /* ---------------------------------------------------------------- */
+#[derive(Debug, Clone)]
 /// Http message component value
 pub(crate) struct HttpMessageComponentValue {
   /// inner value originally from http message header or derived from http message
@@ -50,7 +77,7 @@ impl std::fmt::Display for HttpMessageComponentValue {
 }
 
 /* ---------------------------------------------------------------- */
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http message component identifier
 pub(crate) enum HttpMessageComponentIdentifier {
   /// Http field component
@@ -125,7 +152,7 @@ impl From<&str> for HttpMessageComponentParam {
   }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) struct HttpMessageComponentParams(pub(crate) HashSet<HttpMessageComponentParam>);
 impl std::hash::Hash for HttpMessageComponentParams {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -187,7 +214,7 @@ impl From<&str> for DerivedComponentName {
   }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http derived component setting with optional parameters
 pub(crate) struct DerivedComponentId {
   /// derived component
@@ -232,7 +259,7 @@ impl std::fmt::Display for DerivedComponentId {
 }
 
 /* ---------------------------------------------------------------- */
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http field component setting with optional parameters
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-http-fields
 pub(crate) struct HttpFieldComponentId {
