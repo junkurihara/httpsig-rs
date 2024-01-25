@@ -1,4 +1,5 @@
 mod crypto;
+mod hyper_http_ext;
 mod message_component;
 mod signature_base;
 mod signature_params;

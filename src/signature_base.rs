@@ -10,6 +10,10 @@ struct SignatureBase {
 }
 
 impl SignatureBase {
+  /// Creates a new signature base from component lines and signature params
+  /// This should not be exposed to user and not used directly.
+  /// TODO: Use wrapper functions generating SignatureBase from base HTTP request and SignatureParamsBuilder itself instead when newly generating signature
+  /// TODO: When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
   pub(crate) fn try_new(
     component_lines: &Vec<HttpMessageComponent>,
     signature_params: &HttpSignatureParams,
@@ -34,6 +38,12 @@ impl SignatureBase {
       component_lines: component_lines.clone(),
       signature_params: signature_params.clone(),
     })
+  }
+
+  /// Returns the signature base string as bytes to be signed
+  pub(crate) fn as_bytes(&self) -> Vec<u8> {
+    let string = self.to_string();
+    string.as_bytes().to_vec()
   }
 }
 
