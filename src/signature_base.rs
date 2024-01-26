@@ -59,10 +59,6 @@ impl std::fmt::Display for SignatureBase {
   }
 }
 
-// TODO: creating signature base from http header lines and signature params builder config
-
-// TODO: creating signature base from http header lines including signature params
-
 #[cfg(test)]
 mod test {
   use super::*;
