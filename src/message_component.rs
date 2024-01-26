@@ -121,6 +121,8 @@ pub(crate) enum HttpMessageComponentParam {
   Tr,
   // req: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.4
   Req,
+  // name: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-query-parameters
+  Name(String),
 }
 
 impl From<HttpMessageComponentParam> for String {
@@ -131,6 +133,7 @@ impl From<HttpMessageComponentParam> for String {
       HttpMessageComponentParam::Bs => "bs".to_string(),
       HttpMessageComponentParam::Tr => "tr".to_string(),
       HttpMessageComponentParam::Req => "req".to_string(),
+      HttpMessageComponentParam::Name(v) => format!("name=\"{v}\""),
     }
   }
 }
@@ -144,6 +147,8 @@ impl From<&str> for HttpMessageComponentParam {
       _ => {
         if val.starts_with("key=\"") && val.ends_with('"') {
           Self::Key(val[5..val.len() - 1].to_string())
+        } else if val.starts_with("name=\"") && val.ends_with('"') {
+          Self::Name(val[6..val.len() - 1].to_string())
         } else {
           panic!("Invalid http field param: {}", val)
         }
@@ -228,10 +233,13 @@ impl From<&str> for DerivedComponentId {
   fn from(val: &str) -> Self {
     let mut iter = val.split(';');
     let component = iter.next().unwrap();
-    // only `req` field param is allowed for derived components unlike general http fields
+    // only `req` field param for any or `name="xx"` for @query-params are allowed for derived components unlike general http fields
     let params = iter
       .map(HttpMessageComponentParam::from)
-      .filter(|v| matches!(v, HttpMessageComponentParam::Req))
+      .filter(|v| {
+        matches!(v, HttpMessageComponentParam::Req)
+          || (matches!(v, HttpMessageComponentParam::Name(_)) && matches!(component, "\"@query-param\""))
+      })
       .collect::<HashSet<_>>();
     Self {
       component_name: DerivedComponentName::from(component),
@@ -385,6 +393,19 @@ mod tests {
       params.params.0,
       vec![HttpMessageComponentParam::Req].into_iter().collect::<HashSet<_>>()
     );
+  }
+
+  #[test]
+  fn test_query_params() {
+    let params = DerivedComponentId::from("\"@query-param\";name=\"test\"");
+    assert_eq!(params.component_name, DerivedComponentName::QueryParam);
+    assert_eq!(
+      params.params.0,
+      vec![HttpMessageComponentParam::Name("test".to_string())]
+        .into_iter()
+        .collect::<HashSet<_>>()
+    );
+    assert_eq!(params.to_string(), "\"@query-param\";name=\"test\"");
   }
 
   #[test]

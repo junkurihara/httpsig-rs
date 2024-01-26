@@ -1,4 +1,12 @@
 use super::{ContentDigestType, CONTENT_DIGEST_HEADER};
+use crate::{
+  message_component::{
+    DerivedComponentName, HttpMessageComponent, HttpMessageComponentIdentifier, HttpMessageComponentParam,
+    HttpMessageComponentValue,
+  },
+  signature_base::SignatureBase,
+  signature_params::HttpSignatureParams,
+};
 use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine as _};
 use bytes::{Buf, Bytes};
@@ -140,9 +148,161 @@ where
 }
 
 /* --------------------------------------- */
+#[async_trait]
+/// A trait to set the http message signature from given http signature params
+pub trait HyperRequestMessageSignature {
+  type Error;
+  async fn set_message_signature(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+  ) -> std::result::Result<(), Self::Error>
+  where
+    Self: Sized;
+}
+
+#[async_trait]
+impl<D> HyperRequestMessageSignature for Request<D>
+where
+  D: Send + Body,
+{
+  type Error = anyhow::Error;
+
+  async fn set_message_signature(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+  ) -> std::result::Result<(), Self::Error>
+  where
+    Self: Sized,
+  {
+    let component_lines = signature_params
+      .covered_components
+      .iter()
+      .map(|component_id_str| {
+        let component_id = HttpMessageComponentIdentifier::from(component_id_str.as_str());
+
+        extract_component_from_request(self, &component_id)
+      })
+      .collect::<Vec<_>>();
+
+    anyhow::ensure!(
+      component_lines.iter().all(|c| c.is_ok()),
+      "Failed to extract component lines"
+    );
+    let component_lines = component_lines.into_iter().map(|c| c.unwrap()).collect::<Vec<_>>();
+
+    let signature_base = SignatureBase::try_new(&component_lines, signature_params);
+
+    Ok(())
+  }
+}
+/* --------------------------------------- */
+/// Extract http message component from hyper http request
+fn extract_component_from_request<B>(
+  req: &Request<B>,
+  target_component_id: &HttpMessageComponentIdentifier,
+) -> Result<HttpMessageComponent, anyhow::Error> {
+  let params = match &target_component_id {
+    HttpMessageComponentIdentifier::HttpField(field_id) => &field_id.params,
+    HttpMessageComponentIdentifier::Derived(derived_id) => &derived_id.params,
+  };
+  anyhow::ensure!(
+    !params.0.contains(&HttpMessageComponentParam::Req),
+    "`req` is not allowed in request"
+  );
+
+  let field_values = match &target_component_id {
+    HttpMessageComponentIdentifier::HttpField(field_id) => {
+      let field_values = req
+        .headers()
+        .get_all(&field_id.filed_name)
+        .iter()
+        .map(|v| v.to_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+      field_values
+    }
+    HttpMessageComponentIdentifier::Derived(derived_id) => {
+      let url = url::Url::parse(&req.uri().to_string())?;
+      let field_value = match derived_id.component_name {
+        DerivedComponentName::Method => req.method().to_string(),
+        DerivedComponentName::TargetUri => url.to_string(),
+        DerivedComponentName::Authority => url.authority().to_string(),
+        DerivedComponentName::Scheme => url.scheme().to_string(),
+        DerivedComponentName::RequestTarget => match *req.method() {
+          http::Method::CONNECT => url.authority().to_string(),
+          http::Method::OPTIONS => "*".to_string(),
+          _ => {
+            let mut base = url.path().to_string();
+            if let Some(query) = url.query() {
+              base.push_str(&format!("?{query}"));
+            }
+            base
+          }
+        },
+        DerivedComponentName::Path => url.path().to_string(),
+        DerivedComponentName::Query => format!("?{}", url.query().unwrap_or("")),
+        DerivedComponentName::QueryParam => {
+          let query_pairs = url.query_pairs().collect::<Vec<_>>();
+          println!("query_param: {:?}", query_pairs);
+
+          todo!("not implemented yet") // TODO: dict
+        }
+        _ => panic!("invalid derived component name for request"),
+      };
+      vec![field_value]
+    }
+  };
+
+  let component = HttpMessageComponent {
+    id: target_component_id.clone(),
+    value: HttpMessageComponentValue::from(""),
+  };
+  Ok(component)
+}
+
+/* --------------------------------------- */
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn test_extract_component_from_request() {
+    let req = Request::builder()
+      .method("GET")
+      .uri("https://example.com/parameters?var=this%20is%20a%20big%0Amultiline%20value&bar=with+plus+whitespace&fa%C3%A7ade%22%3A%20=something")
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .header("content-type", "application/json")
+      .body(())
+      .unwrap();
+
+    let component_id_method = HttpMessageComponentIdentifier::from("\"@method\"");
+    let component = extract_component_from_request(&req, &component_id_method).unwrap();
+    println!("{:?}", component);
+
+    let component_id_query_param = HttpMessageComponentIdentifier::from("\"@query-param\"");
+    let component = extract_component_from_request(&req, &component_id_query_param).unwrap();
+    println!("{:?}", component);
+    // let component = extract_component_from_request(&req, &component_id).unwrap();
+    // assert_eq!(component.id, component_id);
+    // assert_eq!(component.field_values, vec!["GET".to_string()]);
+
+    // let component_id = HttpMessageComponentIdentifier::from("\"date\"");
+    // let component = extract_component_from_request(&req, &component_id).unwrap();
+    // assert_eq!(component.id, component_id);
+    // assert_eq!(
+    //   component.field_values,
+    //   vec!["Sun, 09 May 2021 18:30:00 GMT".to_string()]
+    // );
+
+    // let component_id = HttpMessageComponentIdentifier::from("\"content-type\"");
+    // let component = extract_component_from_request(&req, &component_id).unwrap();
+    // assert_eq!(component.id, component_id);
+    // assert_eq!(component.field_values, vec!["application/json".to_string()]);
+
+    // let component_id = HttpMessageComponentIdentifier::from("\"@signature-params\"");
+    // let component = extract_component_from_request(&req, &component_id).unwrap();
+    // assert_eq!(component.id, component_id);
+    // assert_eq!(component.field_values, vec!["".to_string()]);
+  }
 
   #[tokio::test]
   async fn content_digest() {

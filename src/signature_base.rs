@@ -2,7 +2,7 @@ use crate::{message_component::HttpMessageComponent, signature_params::HttpSigna
 
 /// Signature Base
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.5
-struct SignatureBase {
+pub(crate) struct SignatureBase {
   /// HTTP message field and derived components ordered as in the vector in signature params
   component_lines: Vec<HttpMessageComponent>,
   /// signature params
