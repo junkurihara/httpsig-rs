@@ -1,7 +1,7 @@
 use super::{ContentDigestType, CONTENT_DIGEST_HEADER};
 use crate::{
   message_component::{
-    DerivedComponentName, HttpMessageComponent, HttpMessageComponentIdentifier, HttpMessageComponentParam,
+    DerivedComponentName, HttpMessageComponent, HttpMessageComponentName, HttpMessageComponentParam,
     HttpMessageComponentValue,
   },
   signature_base::SignatureBase,
@@ -178,7 +178,7 @@ where
       .covered_components
       .iter()
       .map(|component_id_str| {
-        let component_id = HttpMessageComponentIdentifier::from(component_id_str.as_str());
+        let component_id = HttpMessageComponentName::from(component_id_str.as_str());
 
         extract_component_from_request(self, &component_id)
       })
@@ -199,11 +199,11 @@ where
 /// Extract http message component from hyper http request
 fn extract_component_from_request<B>(
   req: &Request<B>,
-  target_component_id: &HttpMessageComponentIdentifier,
+  target_component_id: &HttpMessageComponentName,
 ) -> Result<HttpMessageComponent, anyhow::Error> {
   let params = match &target_component_id {
-    HttpMessageComponentIdentifier::HttpField(field_id) => &field_id.params,
-    HttpMessageComponentIdentifier::Derived(derived_id) => &derived_id.params,
+    HttpMessageComponentName::HttpField(field_id) => &field_id.params,
+    HttpMessageComponentName::Derived(derived_id) => &derived_id.params,
   };
   anyhow::ensure!(
     !params.0.contains(&HttpMessageComponentParam::Req),
@@ -211,7 +211,7 @@ fn extract_component_from_request<B>(
   );
 
   let field_values = match &target_component_id {
-    HttpMessageComponentIdentifier::HttpField(field_id) => {
+    HttpMessageComponentName::HttpField(field_id) => {
       let field_values = req
         .headers()
         .get_all(&field_id.filed_name)
@@ -220,7 +220,7 @@ fn extract_component_from_request<B>(
         .collect::<Vec<_>>();
       field_values
     }
-    HttpMessageComponentIdentifier::Derived(derived_id) => {
+    HttpMessageComponentName::Derived(derived_id) => {
       let url = url::Url::parse(&req.uri().to_string())?;
       let field_value = match derived_id.component_name {
         DerivedComponentName::Method => req.method().to_string(),
@@ -253,7 +253,7 @@ fn extract_component_from_request<B>(
   };
 
   let component = HttpMessageComponent {
-    id: target_component_id.clone(),
+    name: target_component_id.clone(),
     value: HttpMessageComponentValue::from(""),
   };
   Ok(component)
@@ -274,11 +274,11 @@ mod tests {
       .body(())
       .unwrap();
 
-    let component_id_method = HttpMessageComponentIdentifier::from("\"@method\"");
+    let component_id_method = HttpMessageComponentName::from("\"@method\"");
     let component = extract_component_from_request(&req, &component_id_method).unwrap();
     println!("{:?}", component);
 
-    let component_id_query_param = HttpMessageComponentIdentifier::from("\"@query-param\"");
+    let component_id_query_param = HttpMessageComponentName::from("\"@query-param\"");
     let component = extract_component_from_request(&req, &component_id_query_param).unwrap();
     println!("{:?}", component);
     // let component = extract_component_from_request(&req, &component_id).unwrap();

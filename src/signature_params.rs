@@ -1,4 +1,4 @@
-use crate::{crypto::VerifyingKey, message_component::HttpMessageComponentIdentifier, util::has_unique_elements};
+use crate::{crypto::VerifyingKey, message_component::HttpMessageComponentName, util::has_unique_elements};
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -124,7 +124,7 @@ pub struct HttpSignatureParamsBuilder {
   tag: Option<String>,
   /// derived components and http field component ike `date`, `content-type`, `content-length`, etc.
   /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2
-  covered_components: Vec<HttpMessageComponentIdentifier>,
+  covered_components: Vec<HttpMessageComponentName>,
 }
 
 impl Default for HttpSignatureParamsBuilder {
@@ -168,17 +168,14 @@ impl HttpSignatureParamsBuilder {
   }
   /// Set covered components
   pub fn covered_message_component_ids(&mut self, components: &[&str]) {
-    self.covered_components = components
-      .iter()
-      .map(|&c| HttpMessageComponentIdentifier::from(c))
-      .collect();
+    self.covered_components = components.iter().map(|&c| HttpMessageComponentName::from(c)).collect();
     assert!(has_unique_elements(self.covered_components.iter()))
   }
   /// Extend covered conmpoents
   pub fn extend_covered_message_component_ids(&mut self, components: &[&str]) {
     self
       .covered_components
-      .extend(components.iter().map(|&c| HttpMessageComponentIdentifier::from(c)));
+      .extend(components.iter().map(|&c| HttpMessageComponentName::from(c)));
     // check duplicates
     assert!(has_unique_elements(self.covered_components.iter()))
   }
@@ -253,7 +250,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     params.covered_message_component_ids(&["\"@method\"", "\"@path\";bs", "\"@authority\""]);
     let x = vec!["\"@method\"", "\"@path\";bs", "\"@authority\""]
       .into_iter()
-      .map(HttpMessageComponentIdentifier::from)
+      .map(HttpMessageComponentName::from)
       .collect::<Vec<_>>();
     assert_eq!(params.covered_components, x);
     params.key_info(&PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap());

@@ -27,7 +27,7 @@ impl SignatureBase {
       .iter()
       .zip(signature_params.covered_components.iter())
       .all(|(component_line, covered_component_id)| {
-        let component_line_id_string = &component_line.id.to_string();
+        let component_line_id_string = &component_line.name.to_string();
         component_line_id_string == covered_component_id
       });
     if !assertion {

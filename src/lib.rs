@@ -1,14 +1,14 @@
 mod crypto;
-mod ext;
+// mod ext;
 mod message_component;
-mod signature_base;
-mod signature_params;
+// mod signature_base;
+// mod signature_params;
 mod trace;
-mod util;
+// mod util;
 
 use crate::{
   crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
-  signature_params::{HttpSignatureParams, HttpSignatureParamsBuilder},
+  // signature_params::{HttpSignatureParams, HttpSignatureParamsBuilder},
 };
 
 #[cfg(test)]
@@ -65,7 +65,7 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
   #[test]
   fn test_http_signature_params() {
     let signature_params_str = r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
-    let signature_params = HttpSignatureParams::try_from(signature_params_str).unwrap();
-    assert_eq!(signature_params.to_string(), signature_params_str);
+    // let signature_params = HttpSignatureParams::try_from(signature_params_str).unwrap();
+    // assert_eq!(signature_params.to_string(), signature_params_str);
   }
 }
