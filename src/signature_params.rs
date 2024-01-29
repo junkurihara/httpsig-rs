@@ -75,7 +75,7 @@ impl TryFrom<&str> for HttpSignatureParams {
       .unwrap()
       .split(' ')
       .filter(|v| !v.is_empty())
-      .map(|v| HttpMessageComponentId::try_from(v))
+      .map(HttpMessageComponentId::try_from)
       .collect::<Vec<_>>();
     anyhow::ensure!(
       covered_components.iter().all(|v| v.is_ok()),
