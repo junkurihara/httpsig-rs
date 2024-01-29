@@ -1,8 +1,10 @@
 use crate::{
   crypto::VerifyingKey,
   message_component::{HttpMessageComponentId, HttpMessageComponentName},
+  trace::*,
   util::has_unique_elements,
 };
+use anyhow::{bail, ensure};
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -67,7 +69,7 @@ impl TryFrom<&str> for HttpSignatureParams {
   fn try_from(value: &str) -> anyhow::Result<Self> {
     // first extract string inside `()`
     if !(value.starts_with('(') && value.contains(')')) {
-      anyhow::bail!("Invalid message components: {}", value);
+      bail!("Invalid message components: {}", value);
     }
     let mut iter = value[1..].split(')');
     let covered_components = iter
@@ -77,10 +79,13 @@ impl TryFrom<&str> for HttpSignatureParams {
       .filter(|v| !v.is_empty())
       .map(HttpMessageComponentId::try_from)
       .collect::<Vec<_>>();
-    anyhow::ensure!(
+    ensure!(
       covered_components.iter().all(|v| v.is_ok()),
-      "Invalid message components: {}",
-      value
+      "Invalid message component ids: {value}"
+    );
+    ensure!(
+      has_unique_elements(covered_components.iter().map(|v| v.as_ref().unwrap())),
+      "duplicate covered component ids: {value}"
     );
     let covered_components = covered_components
       .into_iter()
@@ -113,7 +118,9 @@ impl TryFrom<&str> for HttpSignatureParams {
           "alg" => params.alg = Some(value[1..value.len() - 1].to_string()),
           "keyid" => params.keyid = Some(value[1..value.len() - 1].to_string()),
           "tag" => params.tag = Some(value[1..value.len() - 1].to_string()),
-          _ => panic!("Invalid signature parameter: {}", key),
+          _ => {
+            error!("Ignore invalid signature parameter: {}", key)
+          }
         }
       });
     };

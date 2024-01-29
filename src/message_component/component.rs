@@ -1,3 +1,4 @@
+use anyhow::{bail, ensure};
 use rustc_hash::FxHashSet as HashSet;
 
 /* ---------------------------------------------------------------- */
@@ -14,7 +15,7 @@ impl HttpMessageComponent {
   /// Create HttpMessageComponent from serialized string, i.e., `"<id>": <value>` in the signature input
   pub(crate) fn from_serialized_str(serialized_str: &str) -> std::result::Result<Self, anyhow::Error> {
     let Some((id, value)) = serialized_str.split_once(':') else {
-      return Err(anyhow::anyhow!("Invalid http message component: {}", serialized_str));
+      bail!("Invalid http message component: {}", serialized_str);
     };
     let id = id.trim();
     ensure_component_id(id)?;
@@ -51,7 +52,7 @@ impl HttpMessageComponent {
 
 fn ensure_component_id(id: &str) -> anyhow::Result<()> {
   if !id.starts_with('"') || !(id.ends_with('"') || id[1..].contains("\";")) {
-    return Err(anyhow::anyhow!("Invalid http message component id: {}", id));
+    bail!("Invalid http message component id: {}", id);
   }
   Ok(())
 }
@@ -108,7 +109,7 @@ impl TryFrom<(&str, &str)> for HttpMessageComponentId {
     } else if !name.starts_with('"') && !name.ends_with('"') {
       name.to_string()
     } else {
-      anyhow::bail!("Invalid http message component name: {}", name);
+      bail!("Invalid http message component name: {}", name);
     };
 
     let res = Self {
@@ -118,7 +119,7 @@ impl TryFrom<(&str, &str)> for HttpMessageComponentId {
 
     // assert for query param
     if res.params.0.iter().any(|v| matches!(v, &HttpMessageComponentParam::Name(_))) {
-      anyhow::ensure!(
+      ensure!(
         matches!(res.name, HttpMessageComponentName::Derived(DerivedComponentName::QueryParam)),
         "Invalid http message component id: {}",
         res
@@ -133,7 +134,7 @@ impl TryFrom<(&str, &str)> for HttpMessageComponentId {
         || matches!(v, &HttpMessageComponentParam::Tr)
         || matches!(v, &HttpMessageComponentParam::Key(_))
     }) {
-      anyhow::ensure!(
+      ensure!(
         matches!(res.name, HttpMessageComponentName::HttpField(_)),
         "Invalid http message component id: {}",
         res
