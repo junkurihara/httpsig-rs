@@ -1,8 +1,9 @@
 mod crypto;
 mod ext;
 mod message_component;
-// mod signature_base;
+mod signature_base;
 mod signature_params;
+mod signer;
 mod trace;
 mod util;
 

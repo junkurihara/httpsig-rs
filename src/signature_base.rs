@@ -12,7 +12,7 @@ pub(crate) struct SignatureBase {
 impl SignatureBase {
   /// Creates a new signature base from component lines and signature params
   /// This should not be exposed to user and not used directly.
-  /// TODO: Use wrapper functions generating SignatureBase from base HTTP request and SignatureParamsBuilder itself instead when newly generating signature
+  /// TODO: Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
   /// TODO: When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
   pub(crate) fn try_new(
     component_lines: &Vec<HttpMessageComponent>,
@@ -26,10 +26,7 @@ impl SignatureBase {
     let assertion = component_lines
       .iter()
       .zip(signature_params.covered_components.iter())
-      .all(|(component_line, covered_component_id)| {
-        let component_line_id_string = &component_line.name.to_string();
-        component_line_id_string == covered_component_id
-      });
+      .all(|(component_line, covered_component_id)| component_line.id == *covered_component_id);
     if !assertion {
       anyhow::bail!("The order of component lines is not the same as the order of covered message component ids");
     }
@@ -62,31 +59,40 @@ impl std::fmt::Display for SignatureBase {
 #[cfg(test)]
 mod test {
   use super::*;
-  use crate::signature_params::HttpSignatureParamsBuilder;
+  use crate::{message_component::HttpMessageComponentId, signature_params};
 
+  /// BuilderかSignerか何かでSignatureParamsを内部的に生成できるようにする。
+  /// こんな感じでSignatureBaseをParamsとかComponentLinesから直接作るのは避ける。
   #[test]
-  fn test_signature_base() {
-    let mut signature_params = HttpSignatureParamsBuilder::default();
-    signature_params.created(1706091731);
-    signature_params.key_id("key_id");
-    signature_params.algorithm("rsa-sha256");
-    signature_params.covered_message_component_ids(&["\"@method\";req", "\"date\"", "\"content-digest\""]);
-    let signature_params = signature_params.build();
+  fn test_signature_base_directly_instantiated() {
+    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
+    let values = (
+      r##""@method" "@path" "@scheme";req "@authority" "content-type";bs "date" "content-length""##,
+      SIGPARA,
+    );
+
+    let mut signature_params =
+      signature_params::HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
+    signature_params.created = Some(1706091731);
+    signature_params.keyid = Some("key_id".to_string());
+    signature_params.alg = Some("rsa-sha256".to_string());
+    signature_params.covered_components = vec![
+      HttpMessageComponentId::try_from("@method").unwrap(),
+      HttpMessageComponentId::try_from("date").unwrap(),
+      HttpMessageComponentId::try_from("content-digest").unwrap(),
+    ];
 
     let component_lines = vec![
-      HttpMessageComponent::try_from(("\"@method\";req", "GET")).unwrap(),
-      HttpMessageComponent::try_from(("\"date\"", "Tue, 07 Jun 2014 20:51:35 GMT")).unwrap(),
-      HttpMessageComponent::try_from((
-        "\"content-digest\"",
-        "SHA-256=X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=",
-      ))
-      .unwrap(),
+      HttpMessageComponent::from_serialized_str("\"@method\": GET").unwrap(),
+      HttpMessageComponent::from_serialized_str("\"date\": Tue, 07 Jun 2014 20:51:35 GMT").unwrap(),
+      HttpMessageComponent::from_serialized_str("\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:")
+        .unwrap(),
     ];
     let signature_base = SignatureBase::try_new(&component_lines, &signature_params).unwrap();
-    let test_string = r##""@method";req: GET
+    let test_string = r##""@method": GET
 "date": Tue, 07 Jun 2014 20:51:35 GMT
-"content-digest": SHA-256=X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=
-"@signature-params": ("@method";req "date" "content-digest");created=1706091731;alg="rsa-sha256";keyid="key_id""##;
+"content-digest": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
+"@signature-params": ("@method" "date" "content-digest");created=1706091731;alg="rsa-sha256";keyid="key_id""##;
     assert_eq!(signature_base.to_string(), test_string);
   }
 }
