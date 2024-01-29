@@ -61,7 +61,7 @@ mod test {
   use super::*;
   use crate::{message_component::HttpMessageComponentId, signature_params};
 
-  /// BuilderかSignerか何かでSignatureParamsを内部的に生成できるようにする。
+  /// BuilderかSignerか何かでSignatureParamsを、verify時はreqか、sign時は内部に持つ生成フラグから内部的に生成できるようにする。
   /// こんな感じでSignatureBaseをParamsとかComponentLinesから直接作るのは避ける。
   #[test]
   fn test_signature_base_directly_instantiated() {
@@ -70,17 +70,8 @@ mod test {
       r##""@method" "@path" "@scheme";req "@authority" "content-type";bs "date" "content-length""##,
       SIGPARA,
     );
-
-    let mut signature_params =
+    let signature_params =
       signature_params::HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
-    signature_params.created = Some(1706091731);
-    signature_params.keyid = Some("key_id".to_string());
-    signature_params.alg = Some("rsa-sha256".to_string());
-    signature_params.covered_components = vec![
-      HttpMessageComponentId::try_from("@method").unwrap(),
-      HttpMessageComponentId::try_from("date").unwrap(),
-      HttpMessageComponentId::try_from("content-digest").unwrap(),
-    ];
 
     let component_lines = vec![
       HttpMessageComponent::from_serialized_str("\"@method\": GET").unwrap(),
@@ -92,7 +83,7 @@ mod test {
     let test_string = r##""@method": GET
 "date": Tue, 07 Jun 2014 20:51:35 GMT
 "content-digest": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
-"@signature-params": ("@method" "date" "content-digest");created=1706091731;alg="rsa-sha256";keyid="key_id""##;
+"@signature-params": ("@method" "date" "content-digest");created=1706091731;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
     assert_eq!(signature_base.to_string(), test_string);
   }
 }
