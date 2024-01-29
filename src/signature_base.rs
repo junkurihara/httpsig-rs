@@ -59,7 +59,7 @@ impl std::fmt::Display for SignatureBase {
 #[cfg(test)]
 mod test {
   use super::*;
-  use crate::{message_component::HttpMessageComponentId, signature_params};
+  use crate::signature_params::HttpSignatureParams;
 
   /// BuilderかSignerか何かでSignatureParamsを、verify時はreqか、sign時は内部に持つ生成フラグから内部的に生成できるようにする。
   /// こんな感じでSignatureBaseをParamsとかComponentLinesから直接作るのは避ける。
@@ -67,8 +67,7 @@ mod test {
   fn test_signature_base_directly_instantiated() {
     const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
     let values = (r##""@method" "@path" "date" "content-digest""##, SIGPARA);
-    let signature_params =
-      signature_params::HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
+    let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 
     let component_lines = vec![
       HttpMessageComponent::from_serialized_str("\"@method\": GET").unwrap(),
