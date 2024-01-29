@@ -1,3 +1,4 @@
+mod hyper_content_digest;
 mod hyper_http;
 
 const CONTENT_DIGEST_HEADER: &str = "content-digest";

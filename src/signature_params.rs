@@ -36,7 +36,7 @@ impl std::fmt::Display for HttpSignatureParams {
       if acc.is_empty() {
         v.to_string()
       } else {
-        format!("{} {}", acc, v.to_string())
+        format!("{acc} {v}")
       }
     });
     let mut s: String = format!("({})", joined);

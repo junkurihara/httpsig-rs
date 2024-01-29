@@ -102,8 +102,17 @@ impl TryFrom<&str> for HttpMessageComponentId {
 impl TryFrom<(&str, &str)> for HttpMessageComponentId {
   type Error = anyhow::Error;
   fn try_from((name, params): (&str, &str)) -> std::result::Result<Self, Self::Error> {
+    let name = name.trim();
+    let inner_name = if name.starts_with('"') && name.ends_with('"') {
+      name[1..name.len() - 1].to_string()
+    } else if !name.starts_with('"') && !name.ends_with('"') {
+      name.to_string()
+    } else {
+      anyhow::bail!("Invalid http message component name: {}", name);
+    };
+
     let res = Self {
-      name: HttpMessageComponentName::from(name),
+      name: HttpMessageComponentName::from(inner_name.as_ref()),
       params: HttpMessageComponentParams::from(params),
     };
 
@@ -136,7 +145,7 @@ impl TryFrom<(&str, &str)> for HttpMessageComponentId {
 }
 
 /* ---------------------------------------------------------------- */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Http message component value
 pub(crate) struct HttpMessageComponentValue {
   /// inner value originally from http message header or derived from http message
@@ -159,7 +168,7 @@ impl std::fmt::Display for HttpMessageComponentValue {
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http message component identifier
 pub(crate) enum HttpMessageComponentName {
-  /// Http field component
+  /// Http field component, which is in the form of `<field_name>` without being wrapped by double quotations
   HttpField(String),
   /// Derived component
   Derived(DerivedComponentName),
@@ -167,7 +176,7 @@ pub(crate) enum HttpMessageComponentName {
 
 impl From<&str> for HttpMessageComponentName {
   fn from(val: &str) -> Self {
-    if val.starts_with("\"@") {
+    if val.starts_with('@') {
       Self::Derived(DerivedComponentName::from(val))
     } else {
       Self::HttpField(val.to_string())
@@ -178,8 +187,8 @@ impl From<&str> for HttpMessageComponentName {
 impl std::fmt::Display for HttpMessageComponentName {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::HttpField(val) => write!(f, "{}", val),
-      Self::Derived(val) => write!(f, "{}", val),
+      Self::HttpField(val) => write!(f, "\"{}\"", val),
+      Self::Derived(val) => write!(f, "\"{}\"", val),
     }
   }
 }
@@ -286,19 +295,21 @@ pub(crate) enum DerivedComponentName {
   Query,
   QueryParam,
   Status,
+  SignatureParams,
 }
 impl AsRef<str> for DerivedComponentName {
   fn as_ref(&self) -> &str {
     match self {
-      Self::Method => "\"@method\"",
-      Self::TargetUri => "\"@target-uri\"",
-      Self::Authority => "\"@authority\"",
-      Self::Scheme => "\"@scheme\"",
-      Self::RequestTarget => "\"@request-target\"",
-      Self::Path => "\"@path\"",
-      Self::Query => "\"@query\"",
-      Self::QueryParam => "\"@query-param\"",
-      Self::Status => "\"@status\"",
+      Self::Method => "@method",
+      Self::TargetUri => "@target-uri",
+      Self::Authority => "@authority",
+      Self::Scheme => "@scheme",
+      Self::RequestTarget => "@request-target",
+      Self::Path => "@path",
+      Self::Query => "@query",
+      Self::QueryParam => "@query-param",
+      Self::Status => "@status",
+      Self::SignatureParams => "@signature-params",
     }
   }
 }
@@ -310,15 +321,16 @@ impl From<DerivedComponentName> for String {
 impl From<&str> for DerivedComponentName {
   fn from(val: &str) -> Self {
     match val {
-      "\"@method\"" => Self::Method,
-      "\"@target-uri\"" => Self::TargetUri,
-      "\"@authority\"" => Self::Authority,
-      "\"@scheme\"" => Self::Scheme,
-      "\"@request-target\"" => Self::RequestTarget,
-      "\"@path\"" => Self::Path,
-      "\"@query\"" => Self::Query,
-      "\"@query-param\"" => Self::QueryParam,
-      "\"@status\"" => Self::Status,
+      "@method" => Self::Method,
+      "@target-uri" => Self::TargetUri,
+      "@authority" => Self::Authority,
+      "@scheme" => Self::Scheme,
+      "@request-target" => Self::RequestTarget,
+      "@path" => Self::Path,
+      "@query" => Self::Query,
+      "@query-param" => Self::QueryParam,
+      "@status" => Self::Status,
+      "@signature-params" => Self::SignatureParams,
       _ => panic!("Invalid derived component: {}", val),
     }
   }
@@ -376,14 +388,14 @@ mod tests {
   #[test]
   fn test_from_serialized_string_http_field() {
     let tuples = vec![
-      ("\"example-header\"", "example-value", "\"example-header\""),
-      ("\"example-header\";bs;tr", "example-value", "\"example-header\""),
-      ("\"example-header\";bs", "example-value", "\"example-header\""),
-      ("\"x-empty-header\"", "", "\"x-empty-header\""),
+      ("\"example-header\"", "example-value", "example-header"),
+      ("\"example-header\";bs;tr", "example-value", "example-header"),
+      ("\"example-header\";bs", "example-value", "example-header"),
+      ("\"x-empty-header\"", "", "x-empty-header"),
     ];
-    for (id, value, name) in tuples {
+    for (id, value, inner_name) in tuples {
       let comp = HttpMessageComponent::from_serialized_str(format!("{}: {}", id, value).as_ref()).unwrap();
-      assert_eq!(comp.id.name, HttpMessageComponentName::HttpField(name.to_string()));
+      assert_eq!(comp.id.name, HttpMessageComponentName::HttpField(inner_name.to_string()));
       if !id.contains(';') {
         assert_eq!(comp.id.params.0, HashSet::default());
       } else {
@@ -399,7 +411,7 @@ mod tests {
     let comp = HttpMessageComponent::from_serialized_str("\"example-header\";bs;tr: example-value").unwrap();
     assert_eq!(
       comp.id.name,
-      HttpMessageComponentName::HttpField("\"example-header\"".to_string())
+      HttpMessageComponentName::HttpField("example-header".to_string())
     );
     assert_eq!(
       comp.id.params.0,
@@ -414,7 +426,7 @@ mod tests {
     let comp = HttpMessageComponent::from_serialized_str("\"example-header\";key=\"hoge\": example-value").unwrap();
     assert_eq!(
       comp.id.name,
-      HttpMessageComponentName::HttpField("\"example-header\"".to_string())
+      HttpMessageComponentName::HttpField("example-header".to_string())
     );
     assert_eq!(
       comp.id.params.0,
