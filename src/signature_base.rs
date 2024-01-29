@@ -66,24 +66,26 @@ mod test {
   #[test]
   fn test_signature_base_directly_instantiated() {
     const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
-    let values = (
-      r##""@method" "@path" "@scheme";req "@authority" "content-type";bs "date" "content-length""##,
-      SIGPARA,
-    );
+    let values = (r##""@method" "@path" "date" "content-digest""##, SIGPARA);
     let signature_params =
       signature_params::HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 
     let component_lines = vec![
       HttpMessageComponent::from_serialized_str("\"@method\": GET").unwrap(),
+      HttpMessageComponent::from_serialized_str("\"@path\": /").unwrap(),
       HttpMessageComponent::from_serialized_str("\"date\": Tue, 07 Jun 2014 20:51:35 GMT").unwrap(),
       HttpMessageComponent::from_serialized_str("\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:")
         .unwrap(),
     ];
     let signature_base = SignatureBase::try_new(&component_lines, &signature_params).unwrap();
     let test_string = r##""@method": GET
+"@path": /
 "date": Tue, 07 Jun 2014 20:51:35 GMT
 "content-digest": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
-"@signature-params": ("@method" "date" "content-digest");created=1706091731;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
-    assert_eq!(signature_base.to_string(), test_string);
+"@signature-params": "##;
+    assert_eq!(
+      signature_base.to_string(),
+      format!("{}({}){}", test_string, values.0, values.1)
+    );
   }
 }
