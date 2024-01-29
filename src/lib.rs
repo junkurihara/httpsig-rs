@@ -2,9 +2,9 @@ mod crypto;
 // mod ext;
 mod message_component;
 // mod signature_base;
-// mod signature_params;
+mod signature_params;
 mod trace;
-// mod util;
+mod util;
 
 use crate::{
   crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
@@ -31,8 +31,7 @@ MCowBQYDK2VwAyEAJrQLj5P/89iXES9+vFgrIy29clF9CC/oPPsw3c5D0bs=
 "content-type": application/json
 "content-length": 18
 "@signature-params": ("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
-  const SIGNATURE_VALUE: &str =
-    "wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==";
+  const SIGNATURE_VALUE: &str = "wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==";
   const _SIGNATURE_RESULT: &str = r##"Signature-Input: sig-b26=("date" "@method" "@path" "@authority" \
   "content-type" "content-length");created=1618884473\
   ;keyid="test-key-ed25519"
@@ -64,7 +63,8 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
 
   #[test]
   fn test_http_signature_params() {
-    let signature_params_str = r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
+    let signature_params_str =
+      r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
     // let signature_params = HttpSignatureParams::try_from(signature_params_str).unwrap();
     // assert_eq!(signature_params.to_string(), signature_params_str);
   }
