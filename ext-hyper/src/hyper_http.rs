@@ -148,8 +148,7 @@ mod tests {
   use super::*;
   use http_body_util::Full;
 
-  #[tokio::test]
-  async fn test_extract_component_from_request() {
+  async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
     let req = Request::builder()
       .method("GET")
@@ -159,7 +158,12 @@ mod tests {
       .header("content-type", "application/json-patch+json")
       .body(body)
       .unwrap();
-    let mut req = req.set_content_digest(&ContentDigestType::Sha256).await.unwrap();
+    req.set_content_digest(&ContentDigestType::Sha256).await
+  }
+
+  #[tokio::test]
+  async fn test_extract_component_from_request() {
+    let mut req = build_request().await.unwrap();
 
     let component_id_method = HttpMessageComponentId::try_from("\"@method\"").unwrap();
     let component = extract_http_message_component_from_request(&req, &component_id_method).unwrap();
