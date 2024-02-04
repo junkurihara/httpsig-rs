@@ -7,7 +7,7 @@ use httpsig::prelude::{
     build_http_message_component, DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
     HttpMessageComponentParam,
   },
-  signature_params::HttpSignatureParams,
+  HttpSignatureBase, HttpSignatureParams,
 };
 //
 
@@ -53,6 +53,22 @@ where
   }
 }
 /* --------------------------------------- */
+/// Build signature base from hyper http request and signature params
+fn build_signature_base_from_request<B>(
+  req: &Request<B>,
+  signature_params: &HttpSignatureParams,
+) -> anyhow::Result<HttpSignatureBase> {
+  let component_lines = signature_params
+    .covered_components
+    .iter()
+    .map(|component_id| extract_http_message_component_from_request(req, component_id))
+    .collect::<Vec<_>>();
+  ensure!(component_lines.iter().all(|c| c.is_ok()), "Failed to extract component lines");
+  let component_lines = component_lines.into_iter().map(|c| c.unwrap()).collect::<Vec<_>>();
+
+  HttpSignatureBase::try_new(&component_lines, signature_params)
+}
+
 /// Extract http field from hyper http request
 fn extract_http_field_from_request<B>(
   req: &Request<B>,
@@ -203,5 +219,24 @@ mod tests {
     assert_eq!(component.value.as_field_value(), r##"sig1=("@method" "@authority")"##);
     assert_eq!(component.value.as_component_value(), r##"("@method" "@authority")"##);
     assert_eq!(component.value.key(), Some("sig1"));
+  }
+
+  #[tokio::test]
+  async fn test_build_signature_base_from_request() {
+    let req = build_request().await.unwrap();
+
+    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
+    let values = (r##""@method" "content-type" "date" "content-digest""##, SIGPARA);
+    let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
+
+    let signature_base = build_signature_base_from_request(&req, &signature_params).unwrap();
+    assert_eq!(
+      signature_base.to_string(),
+      r##""@method": GET
+"content-type": application/json, application/json-patch+json
+"date": Sun, 09 May 2021 18:30:00 GMT
+"content-digest": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
+"@signature-params": ("@method" "content-type" "date" "content-digest");created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##
+    );
   }
 }

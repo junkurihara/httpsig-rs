@@ -18,9 +18,8 @@ pub mod prelude {
       HttpMessageComponentParam,
     };
   }
-  pub mod signature_params {
-    pub use crate::signature_params::HttpSignatureParams;
-  }
+
+  pub use crate::{signature_base::HttpSignatureBase, signature_params::HttpSignatureParams};
 }
 
 #[cfg(test)]

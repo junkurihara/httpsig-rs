@@ -17,19 +17,19 @@ const DEFAULT_EXPIRES_IN: u64 = 300;
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-signature-parameters
 pub struct HttpSignatureParams {
   /// created unix timestamp.
-  pub(crate) created: Option<u64>,
+  pub created: Option<u64>,
   /// signature expires unix timestamp.
-  pub(crate) expires: Option<u64>,
+  pub expires: Option<u64>,
   /// nonce
-  pub(crate) nonce: Option<String>,
+  pub nonce: Option<String>,
   /// algorithm name
-  pub(crate) alg: Option<String>,
+  pub alg: Option<String>,
   /// key id.
-  pub(crate) keyid: Option<String>,
+  pub keyid: Option<String>,
   /// tag
-  pub(crate) tag: Option<String>,
+  pub tag: Option<String>,
   /// covered component vector string: ordered message components, i.e., string of http_fields and derived_components
-  pub(crate) covered_components: Vec<HttpMessageComponentId>,
+  pub covered_components: Vec<HttpMessageComponentId>,
 }
 
 impl std::fmt::Display for HttpSignatureParams {
