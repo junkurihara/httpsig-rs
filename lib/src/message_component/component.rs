@@ -4,16 +4,16 @@ use rustc_hash::FxHashSet as HashSet;
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone)]
 /// Http message component
-pub(crate) struct HttpMessageComponent {
+pub struct HttpMessageComponent {
   /// Http message component id
-  pub(crate) id: HttpMessageComponentId,
+  pub id: HttpMessageComponentId,
   /// Http message component value
-  pub(crate) value: HttpMessageComponentValue,
+  pub value: HttpMessageComponentValue,
 }
 
 impl HttpMessageComponent {
   /// Create HttpMessageComponent from serialized string, i.e., `"<id>": <value>` in the signature input
-  pub(crate) fn from_serialized_str(serialized_str: &str) -> std::result::Result<Self, anyhow::Error> {
+  pub fn from_serialized_str(serialized_str: &str) -> std::result::Result<Self, anyhow::Error> {
     let Some((id, value)) = serialized_str.split_once(':') else {
       bail!("Invalid http message component: {}", serialized_str);
     };
@@ -68,16 +68,16 @@ impl std::fmt::Display for HttpMessageComponent {
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// Http message component id
-pub(crate) struct HttpMessageComponentId {
+pub struct HttpMessageComponentId {
   /// Http message component name
-  pub(crate) name: HttpMessageComponentName,
+  pub name: HttpMessageComponentName,
   /// Http message component params
-  pub(crate) params: HttpMessageComponentParams,
+  pub params: HttpMessageComponentParams,
 }
 
 impl HttpMessageComponentId {
   /// Add `req` field param to the component, which is used to generate signature input for response from its corresponding request.
-  pub(crate) fn add_req_param(&mut self) {
+  pub fn add_req_param(&mut self) {
     self.params.0.insert(HttpMessageComponentParam::Req);
   }
 }
@@ -148,7 +148,7 @@ impl TryFrom<(&str, &str)> for HttpMessageComponentId {
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Http message component value
-pub(crate) struct HttpMessageComponentValue {
+pub struct HttpMessageComponentValue {
   /// inner value originally from http message header or derived from http message
   inner: String,
 }
@@ -168,7 +168,7 @@ impl std::fmt::Display for HttpMessageComponentValue {
 /* ---------------------------------------------------------------- */
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http message component identifier
-pub(crate) enum HttpMessageComponentName {
+pub enum HttpMessageComponentName {
   /// Http field component, which is in the form of `<field_name>` without being wrapped by double quotations
   HttpField(String),
   /// Derived component
@@ -198,7 +198,7 @@ impl std::fmt::Display for HttpMessageComponentName {
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http message component parameters that appends with `;` in the signature input
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#secion-2.1
-pub(crate) enum HttpMessageComponentParam {
+pub enum HttpMessageComponentParam {
   /// sf: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.1.1
   Sf,
   /// key: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.1.2
@@ -248,7 +248,7 @@ impl From<&str> for HttpMessageComponentParam {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub(crate) struct HttpMessageComponentParams(pub(crate) HashSet<HttpMessageComponentParam>);
+pub struct HttpMessageComponentParams(pub HashSet<HttpMessageComponentParam>);
 impl std::hash::Hash for HttpMessageComponentParams {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     let mut params = self.0.iter().map(|v| v.clone().into()).collect::<Vec<String>>();
@@ -286,7 +286,7 @@ impl std::fmt::Display for HttpMessageComponentParams {
 #[derive(PartialEq, Eq, Clone, Hash, Debug)]
 /// Derive components from http message, which is expressed as @method, @path, @authority, etc. in @signature-params
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-derived-components
-pub(crate) enum DerivedComponentName {
+pub enum DerivedComponentName {
   Method,
   TargetUri,
   Authority,

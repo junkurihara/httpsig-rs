@@ -1,15 +1,15 @@
-use crate::{
-  message_component::{
-    build_http_message_component, DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
-    HttpMessageComponentParam,
-  },
-  // signature_base::SignatureBase,
-  signature_params::HttpSignatureParams,
-};
 use anyhow::{bail, ensure};
 use async_trait::async_trait;
 use http::Request;
 use http_body::Body;
+use httpsig::prelude::{
+  message_component::{
+    build_http_message_component, DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
+    HttpMessageComponentParam,
+  },
+  signature_params::HttpSignatureParams,
+};
+//
 
 // hyper's http specific extension to generate and verify http signature
 

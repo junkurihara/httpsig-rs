@@ -6,7 +6,7 @@ use anyhow::{bail, ensure};
 use sfv::{Parser, SerializeValue};
 
 /// Build http message component from given id and its associated field values
-pub(crate) fn build_http_message_component(
+pub fn build_http_message_component(
   id: &HttpMessageComponentId,
   field_values: &[String],
 ) -> anyhow::Result<HttpMessageComponent> {

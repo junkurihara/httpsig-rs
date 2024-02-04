@@ -1,5 +1,4 @@
 mod crypto;
-mod ext;
 mod message_component;
 mod signature_base;
 mod signature_params;
@@ -11,6 +10,18 @@ use crate::{
   crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
   // signature_params::{HttpSignatureParams, HttpSignatureParamsBuilder},
 };
+
+pub mod prelude {
+  pub mod message_component {
+    pub use crate::message_component::{
+      build_http_message_component, DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
+      HttpMessageComponentParam,
+    };
+  }
+  pub mod signature_params {
+    pub use crate::signature_params::HttpSignatureParams;
+  }
+}
 
 #[cfg(test)]
 mod tests {

@@ -2,7 +2,7 @@ use crate::{message_component::HttpMessageComponent, signature_params::HttpSigna
 
 /// Signature Base
 /// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.5
-pub(crate) struct SignatureBase {
+pub struct SignatureBase {
   /// HTTP message field and derived components ordered as in the vector in signature params
   component_lines: Vec<HttpMessageComponent>,
   /// signature params
@@ -14,10 +14,7 @@ impl SignatureBase {
   /// This should not be exposed to user and not used directly.
   /// TODO: Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
   /// TODO: When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
-  pub(crate) fn try_new(
-    component_lines: &Vec<HttpMessageComponent>,
-    signature_params: &HttpSignatureParams,
-  ) -> anyhow::Result<Self> {
+  pub fn try_new(component_lines: &Vec<HttpMessageComponent>, signature_params: &HttpSignatureParams) -> anyhow::Result<Self> {
     // check if the order of component lines is the same as the order of covered message component ids
     if component_lines.len() != signature_params.covered_components.len() {
       anyhow::bail!("The number of component lines is not the same as the number of covered message component ids");
@@ -38,7 +35,7 @@ impl SignatureBase {
   }
 
   /// Returns the signature base string as bytes to be signed
-  pub(crate) fn as_bytes(&self) -> Vec<u8> {
+  pub fn as_bytes(&self) -> Vec<u8> {
     let string = self.to_string();
     string.as_bytes().to_vec()
   }
