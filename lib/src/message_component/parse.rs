@@ -31,15 +31,15 @@ fn build_derived_component(id: &HttpMessageComponentId, field_values: &[String])
     "invalid parameter for derived component"
   );
 
-  let merged = match derived_id {
-    super::DerivedComponentName::Method => field_values[0].to_ascii_uppercase(),
-    super::DerivedComponentName::TargetUri => field_values[0].to_string(),
-    super::DerivedComponentName::Authority => field_values[0].to_ascii_lowercase(),
-    super::DerivedComponentName::Scheme => field_values[0].to_ascii_lowercase(),
-    super::DerivedComponentName::RequestTarget => field_values[0].to_string(),
-    super::DerivedComponentName::Path => field_values[0].to_string(),
-    super::DerivedComponentName::Query => field_values[0].to_string(),
-    super::DerivedComponentName::Status => field_values[0].to_string(),
+  let value = match derived_id {
+    super::DerivedComponentName::Method => HttpMessageComponentValue::from(field_values[0].to_ascii_uppercase().as_ref()),
+    super::DerivedComponentName::TargetUri => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    super::DerivedComponentName::Authority => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
+    super::DerivedComponentName::Scheme => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
+    super::DerivedComponentName::RequestTarget => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    super::DerivedComponentName::Path => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    super::DerivedComponentName::Query => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    super::DerivedComponentName::Status => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
     super::DerivedComponentName::QueryParam => {
       let name = id.params.0.iter().find_map(|p| match p {
         HttpMessageComponentParam::Name(name) => Some(name),
@@ -54,18 +54,17 @@ fn build_derived_component(id: &HttpMessageComponentId, field_values: &[String])
         .filter(|(k, _)| *k == name.as_str())
         .map(|(_, v)| v)
         .collect::<Vec<_>>();
-      kvs.join(", ")
+      HttpMessageComponentValue::from(kvs.join(", ").as_ref())
     }
     super::DerivedComponentName::SignatureParams => {
       let value = field_values[0].to_string();
-      // let s = value.trim().split_once('=');
-      value
+      let opt_pair = value.trim().split_once('=');
+      ensure!(opt_pair.is_some(), "invalid signature-params derived component");
+      let (key, value) = opt_pair.unwrap();
+      HttpMessageComponentValue::from((key, value))
     }
   };
-  let component = HttpMessageComponent {
-    id: id.clone(),
-    value: HttpMessageComponentValue::from(merged.as_ref()),
-  };
+  let component = HttpMessageComponent { id: id.clone(), value };
   Ok(component)
 }
 

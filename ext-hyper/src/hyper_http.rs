@@ -163,7 +163,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_extract_component_from_request() {
-    let mut req = build_request().await.unwrap();
+    let req = build_request().await.unwrap();
 
     let component_id_method = HttpMessageComponentId::try_from("\"@method\"").unwrap();
     let component = extract_http_message_component_from_request(&req, &component_id_method).unwrap();
@@ -186,7 +186,11 @@ mod tests {
       component.to_string(),
       "\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"
     );
+  }
 
+  #[tokio::test]
+  async fn test_extract_signature_params_from_request() {
+    let mut req = build_request().await.unwrap();
     let headers = req.headers_mut();
     headers.insert(
       "signature-input",
@@ -194,6 +198,10 @@ mod tests {
     );
     let component_id = HttpMessageComponentId::try_from("@signature-params").unwrap();
     let component = extract_http_message_component_from_request(&req, &component_id).unwrap();
-    assert_eq!(component.to_string(), "\"@signature-params\": (\"@method\" \"@input\")");
+    assert_eq!(component.to_string(), "\"@signature-params\": (\"@method\" \"@authority\")");
+    assert_eq!(component.value.to_string(), r##"("@method" "@authority")"##);
+    assert_eq!(component.value.as_field_value(), r##"sig1=("@method" "@authority")"##);
+    assert_eq!(component.value.as_component_value(), r##"("@method" "@authority")"##);
+    assert_eq!(component.value.key(), Some("sig1"));
   }
 }

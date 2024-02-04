@@ -186,7 +186,7 @@ impl std::fmt::Display for HttpMessageComponentValueInner {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::String(val) => write!(f, "{}", val),
-      Self::KeyValue((key, val)) => write!(f, "{}={}", key, val),
+      Self::KeyValue((_, val)) => write!(f, "{}", val),
     }
   }
 }
@@ -199,8 +199,15 @@ impl HttpMessageComponentValue {
       HttpMessageComponentValueInner::KeyValue((key, _)) => Some(key.as_ref()),
     }
   }
-  /// Get value
-  pub fn value(&self) -> &str {
+  /// Get key value connected with `=`, or just value
+  pub fn as_field_value(&self) -> String {
+    match &self.inner {
+      HttpMessageComponentValueInner::String(val) => val.to_owned(),
+      HttpMessageComponentValueInner::KeyValue((key, val)) => format!("{}={}", key, val),
+    }
+  }
+  /// Get value only
+  pub fn as_component_value(&self) -> &str {
     match &self.inner {
       HttpMessageComponentValueInner::String(val) => val.as_ref(),
       HttpMessageComponentValueInner::KeyValue((_, val)) => val.as_ref(),
@@ -412,6 +419,8 @@ mod tests {
         assert!(!comp.id.params.0.is_empty());
       }
       assert_eq!(comp.value.inner.to_string(), value);
+      assert_eq!(comp.value.as_field_value(), value);
+      assert_eq!(comp.value.key(), None);
       assert_eq!(comp.to_string(), format!("{}: {}", id, value));
     }
   }
@@ -426,7 +435,8 @@ mod tests {
       Some(&HttpMessageComponentParam::Name("key".to_string()))
     );
     assert_eq!(comp.value.inner.to_string(), value);
-    assert_eq!(comp.value.value(), value);
+    assert_eq!(comp.value.as_field_value(), value);
+    assert_eq!(comp.value.key(), None);
     assert_eq!(comp.to_string(), format!("{}: {}", id, value));
   }
 
