@@ -14,7 +14,11 @@ impl SignatureBase {
   /// This should not be exposed to user and not used directly.
   /// TODO: Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
   /// TODO: When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
-  pub fn try_new(component_lines: &Vec<HttpMessageComponent>, signature_params: &HttpSignatureParams) -> anyhow::Result<Self> {
+  pub fn try_new(
+    component_lines: &Vec<HttpMessageComponent>,
+    signature_params: &HttpSignatureParams,
+    signature_key: Option<&str>,
+  ) -> anyhow::Result<Self> {
     // check if the order of component lines is the same as the order of covered message component ids
     if component_lines.len() != signature_params.covered_components.len() {
       anyhow::bail!("The number of component lines is not the same as the number of covered message component ids");
@@ -73,7 +77,7 @@ mod test {
       HttpMessageComponent::from_serialized_str("\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:")
         .unwrap(),
     ];
-    let signature_base = SignatureBase::try_new(&component_lines, &signature_params).unwrap();
+    let signature_base = SignatureBase::try_new(&component_lines, &signature_params, None).unwrap();
     let test_string = r##""@method": GET
 "@path": /
 "date": Tue, 07 Jun 2014 20:51:35 GMT

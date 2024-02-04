@@ -150,18 +150,61 @@ impl TryFrom<(&str, &str)> for HttpMessageComponentId {
 /// Http message component value
 pub struct HttpMessageComponentValue {
   /// inner value originally from http message header or derived from http message
-  inner: String,
+  inner: HttpMessageComponentValueInner,
 }
 
 impl From<&str> for HttpMessageComponentValue {
   fn from(val: &str) -> Self {
-    Self { inner: val.to_string() }
+    Self {
+      inner: HttpMessageComponentValueInner::String(val.to_string()),
+    }
+  }
+}
+
+impl From<(&str, &str)> for HttpMessageComponentValue {
+  fn from((key, val): (&str, &str)) -> Self {
+    Self {
+      inner: HttpMessageComponentValueInner::KeyValue((key.to_string(), val.to_string())),
+    }
   }
 }
 
 impl std::fmt::Display for HttpMessageComponentValue {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.inner)
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Http message component value inner, simple string or key-value pair
+enum HttpMessageComponentValueInner {
+  String(String),
+  KeyValue((String, String)),
+}
+
+impl std::fmt::Display for HttpMessageComponentValueInner {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::String(val) => write!(f, "{}", val),
+      Self::KeyValue((key, val)) => write!(f, "{}={}", key, val),
+    }
+  }
+}
+
+impl HttpMessageComponentValue {
+  /// Get key if pair, otherwise None
+  pub fn key(&self) -> Option<&str> {
+    match &self.inner {
+      HttpMessageComponentValueInner::String(_) => None,
+      HttpMessageComponentValueInner::KeyValue((key, _)) => Some(key.as_ref()),
+    }
+  }
+  /// Get value
+  pub fn value(&self) -> &str {
+    match &self.inner {
+      HttpMessageComponentValueInner::String(val) => val.as_ref(),
+      HttpMessageComponentValueInner::KeyValue((_, val)) => val.as_ref(),
+    }
   }
 }
 
@@ -368,7 +411,7 @@ mod tests {
       } else {
         assert!(!comp.id.params.0.is_empty());
       }
-      assert_eq!(comp.value.inner, value);
+      assert_eq!(comp.value.inner.to_string(), value);
       assert_eq!(comp.to_string(), format!("{}: {}", id, value));
     }
   }
@@ -382,7 +425,8 @@ mod tests {
       comp.id.params.0.get(&HttpMessageComponentParam::Name("key".to_string())),
       Some(&HttpMessageComponentParam::Name("key".to_string()))
     );
-    assert_eq!(comp.value.inner, value);
+    assert_eq!(comp.value.inner.to_string(), value);
+    assert_eq!(comp.value.value(), value);
     assert_eq!(comp.to_string(), format!("{}: {}", id, value));
   }
 
@@ -402,7 +446,7 @@ mod tests {
       } else {
         assert!(!comp.id.params.0.is_empty());
       }
-      assert_eq!(comp.value.inner, value);
+      assert_eq!(comp.value.inner.to_string(), value);
       assert_eq!(comp.to_string(), format!("{}: {}", id, value));
     }
   }

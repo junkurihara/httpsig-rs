@@ -56,7 +56,11 @@ fn build_derived_component(id: &HttpMessageComponentId, field_values: &[String])
         .collect::<Vec<_>>();
       kvs.join(", ")
     }
-    super::DerivedComponentName::SignatureParams => field_values.join(", "),
+    super::DerivedComponentName::SignatureParams => {
+      let value = field_values[0].to_string();
+      // let s = value.trim().split_once('=');
+      value
+    }
   };
   let component = HttpMessageComponent {
     id: id.clone(),
