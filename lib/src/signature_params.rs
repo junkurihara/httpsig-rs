@@ -146,10 +146,8 @@ impl TryFrom<&str> for HttpSignatureParams {
     if !(value.starts_with('(') && value.contains(')')) {
       bail!("Invalid message components: {}", value);
     }
-    let mut iter = value[1..].split(')');
-    let covered_components = iter
-      .next()
-      .unwrap()
+    let (inner_list, input_param) = value[1..].split_once(')').map(|(k, v)| (k.trim(), v.trim())).unwrap();
+    let covered_components = inner_list
       .split(' ')
       .filter(|v| !v.is_empty())
       .map(HttpMessageComponentId::try_from)
@@ -178,11 +176,11 @@ impl TryFrom<&str> for HttpSignatureParams {
     };
 
     // then extract signature parameters
-    if let Some(remains) = iter.next() {
-      if !remains.starts_with(';') {
-        anyhow::bail!("Invalid signature parameter: {}", remains);
+    if !input_param.is_empty() {
+      if !input_param.starts_with(';') {
+        anyhow::bail!("Invalid signature parameter: {}", input_param);
       };
-      remains[1..].split(';').for_each(|param| {
+      input_param[1..].split(';').for_each(|param| {
         let mut param_iter = param.split('=');
         let key = param_iter.next().unwrap();
         let value = param_iter.next().unwrap();
@@ -258,6 +256,21 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     params.set_expires_with_duration(Some(100));
     assert!(params.expires.is_some());
     assert_eq!(params.expires.unwrap(), params.created.unwrap() + 100);
+  }
+
+  #[test]
+  fn test_from_string_signature_params_without_param() {
+    let value = r##"("@method" "@path" "@scheme" "@authority" "content-type" "date" "content-length")"##;
+    let params = HttpSignatureParams::try_from(value);
+    assert!(params.is_ok());
+    let params = params.unwrap();
+    assert!(params.created.is_none());
+    assert!(params.expires.is_none());
+    assert!(params.nonce.is_none());
+    assert!(params.alg.is_none());
+    assert!(params.keyid.is_none());
+    assert!(params.tag.is_none());
+    assert_eq!(params.covered_components.len(), 7);
   }
 
   #[test]

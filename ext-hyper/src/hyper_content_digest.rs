@@ -11,7 +11,7 @@ use sha2::Digest;
 
 /* --------------------------------------- */
 #[async_trait]
-trait HyperContentDigest: http_body::Body {
+trait ContentDigest: http_body::Body {
   /// Returns the bytes object of the body
   async fn into_bytes(self) -> std::result::Result<Bytes, Self::Error>
   where
@@ -47,12 +47,12 @@ trait HyperContentDigest: http_body::Body {
   }
 }
 
-impl<T: ?Sized> HyperContentDigest for T where T: http_body::Body {}
+impl<T: ?Sized> ContentDigest for T where T: http_body::Body {}
 
 /* --------------------------------------- */
 #[async_trait]
 /// A trait to set the http content digest in request in base64
-pub trait HyperRequestContentDigest {
+pub trait RequestContentDigest {
   type Error;
   async fn set_content_digest(self, cd_type: &ContentDigestType) -> std::result::Result<Request<Full<Bytes>>, Self::Error>
   where
@@ -69,7 +69,7 @@ pub trait HyperResponseContentDigest {
 }
 
 #[async_trait]
-impl<B> HyperRequestContentDigest for Request<B>
+impl<B> RequestContentDigest for Request<B>
 where
   B: Body + Send,
   <B as Body>::Data: Send,
