@@ -447,6 +447,27 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   }
 
   #[tokio::test]
+  async fn test_set_verify_with_signature_name() {
+    let mut req = build_request().await.unwrap();
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    req
+      .set_message_signature(&signature_params, &secret_key, Some("custom_sig_name"))
+      .await
+      .unwrap();
+
+    let tuples = extract_name_param_signature_tuple_from_request(&req).unwrap();
+    assert_eq!(tuples.len(), 1);
+    assert_eq!(tuples[0].name, "custom_sig_name");
+
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = req.verify_message_signature(&public_key, None).await.unwrap();
+    assert!(verification_res);
+  }
+
+  #[tokio::test]
   async fn test_set_verify_with_key_id() {
     let mut req = build_request().await.unwrap();
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
