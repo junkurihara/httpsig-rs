@@ -1,3 +1,4 @@
+use super::AlgorithmName;
 use anyhow::Result;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -29,7 +30,7 @@ impl super::SigningKey for SharedKey {
     <Self as VerifyingKey>::key_id(self)
   }
   /// Get the algorithm name
-  fn alg(&self) -> String {
+  fn alg(&self) -> AlgorithmName {
     use super::VerifyingKey;
     <Self as VerifyingKey>::alg(self)
   }
@@ -59,9 +60,9 @@ impl super::VerifyingKey for SharedKey {
     }
   }
   /// Get the algorithm name
-  fn alg(&self) -> String {
+  fn alg(&self) -> AlgorithmName {
     match self {
-      SharedKey::HmacSha256(_) => "hmac-sha256".to_string(),
+      SharedKey::HmacSha256(_) => AlgorithmName::HmacSha256,
     }
   }
 }

@@ -1,3 +1,4 @@
+use super::AlgorithmName;
 use anyhow::{anyhow, bail, ensure, Result};
 use ecdsa::{
   elliptic_curve::{sec1::ToEncodedPoint, PublicKey as EcPublicKey, SecretKey as EcSecretKey},
@@ -59,13 +60,11 @@ impl SecretKey {
           .private_key;
         match param.to_string().as_ref() {
           params_oids::Secp256r1 => {
-            let sk =
-              p256::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
+            let sk = p256::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
             Ok(Self::EcdsaP256Sha256(sk))
           }
           params_oids::Secp384r1 => {
-            let sk =
-              p384::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
+            let sk = p384::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| anyhow!("Error decoding private key: {}", e))?;
             Ok(Self::EcdsaP384Sha384(sk))
           }
           _ => bail!("Unsupported curve"),
@@ -130,7 +129,7 @@ impl super::SigningKey for SecretKey {
     self.public_key().key_id()
   }
 
-  fn alg(&self) -> String {
+  fn alg(&self) -> AlgorithmName {
     use super::VerifyingKey;
     self.public_key().alg()
   }
@@ -145,7 +144,7 @@ impl super::VerifyingKey for SecretKey {
     self.public_key().key_id()
   }
 
-  fn alg(&self) -> String {
+  fn alg(&self) -> AlgorithmName {
     self.public_key().alg()
   }
 }
@@ -168,8 +167,7 @@ impl PublicKey {
   pub fn from_pem(pem: &str) -> Result<Self> {
     let (tag, doc) = Document::from_pem(pem).map_err(|e| anyhow!("Error decoding public key: {}", e))?;
     ensure!(tag == "PUBLIC KEY", "Invalid tag");
-    let spki_ref =
-      SubjectPublicKeyInfoRef::from_der(doc.as_bytes()).map_err(|e| anyhow!("Error decoding public key: {}", e))?;
+    let spki_ref = SubjectPublicKeyInfoRef::from_der(doc.as_bytes()).map_err(|e| anyhow!("Error decoding public key: {}", e))?;
     match spki_ref.algorithm.oid.to_string().as_ref() {
       // ec
       algorithm_oids::EC => {
@@ -177,19 +175,16 @@ impl PublicKey {
           .algorithm
           .parameters_oid()
           .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
-        let public_key = spki_ref
-          .subject_public_key
-          .as_bytes()
-          .ok_or(anyhow!("Invalid public key"))?;
+        let public_key = spki_ref.subject_public_key.as_bytes().ok_or(anyhow!("Invalid public key"))?;
         match param.to_string().as_ref() {
           params_oids::Secp256r1 => {
-            let pk = EcPublicKey::<NistP256>::from_sec1_bytes(public_key)
-              .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
+            let pk =
+              EcPublicKey::<NistP256>::from_sec1_bytes(public_key).map_err(|e| anyhow!("Error decoding public key: {}", e))?;
             Ok(Self::EcdsaP256Sha256(pk))
           }
           params_oids::Secp384r1 => {
-            let pk = EcPublicKey::<NistP384>::from_sec1_bytes(public_key)
-              .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
+            let pk =
+              EcPublicKey::<NistP384>::from_sec1_bytes(public_key).map_err(|e| anyhow!("Error decoding public key: {}", e))?;
             Ok(Self::EcdsaP384Sha384(pk))
           }
           _ => bail!("Unsupported curve"),
@@ -197,12 +192,8 @@ impl PublicKey {
       }
       // ed25519
       algorithm_oids::Ed25519 => {
-        let public_key = spki_ref
-          .subject_public_key
-          .as_bytes()
-          .ok_or(anyhow!("Invalid public key"))?;
-        let pk = ed25519_compact::PublicKey::from_slice(public_key)
-          .map_err(|e| anyhow!("Error decoding public key: {}", e))?;
+        let public_key = spki_ref.subject_public_key.as_bytes().ok_or(anyhow!("Invalid public key"))?;
+        let pk = ed25519_compact::PublicKey::from_slice(public_key).map_err(|e| anyhow!("Error decoding public key: {}", e))?;
         Ok(Self::Ed25519(pk))
       }
       _ => bail!("Unsupported algorithm that supports PEM format keys"),
@@ -215,8 +206,8 @@ impl super::VerifyingKey for PublicKey {
   fn verify(&self, data: &[u8], signature: &[u8]) -> Result<()> {
     match self {
       Self::EcdsaP256Sha256(pk) => {
-        let signature = ecdsa::Signature::<NistP256>::from_bytes(signature.into())
-          .map_err(|e| anyhow!("Error decoding signature: {}", e))?;
+        let signature =
+          ecdsa::Signature::<NistP256>::from_bytes(signature.into()).map_err(|e| anyhow!("Error decoding signature: {}", e))?;
         let vk = ecdsa::VerifyingKey::from(pk);
         let mut digest = <Sha256 as Digest>::new();
         digest.update(data);
@@ -224,8 +215,8 @@ impl super::VerifyingKey for PublicKey {
           .map_err(|e| anyhow!("Error verifying signature: {}", e))
       }
       Self::EcdsaP384Sha384(pk) => {
-        let signature = ecdsa::Signature::<NistP384>::from_bytes(signature.into())
-          .map_err(|e| anyhow!("Error decoding signature: {}", e))?;
+        let signature =
+          ecdsa::Signature::<NistP384>::from_bytes(signature.into()).map_err(|e| anyhow!("Error decoding signature: {}", e))?;
         let vk = ecdsa::VerifyingKey::from(pk);
         let mut digest = <Sha384 as Digest>::new();
         digest.update(data);
@@ -233,10 +224,8 @@ impl super::VerifyingKey for PublicKey {
           .map_err(|e| anyhow!("Error verifying signature: {}", e))
       }
       Self::Ed25519(pk) => {
-        let sig =
-          ed25519_compact::Signature::from_slice(signature).map_err(|e| anyhow!("Error decoding signature: {}", e))?;
-        pk.verify(data, &sig)
-          .map_err(|e| anyhow!("Error verifying signature: {}", e))
+        let sig = ed25519_compact::Signature::from_slice(signature).map_err(|e| anyhow!("Error decoding signature: {}", e))?;
+        pk.verify(data, &sig).map_err(|e| anyhow!("Error verifying signature: {}", e))
       }
     }
   }
@@ -257,11 +246,11 @@ impl super::VerifyingKey for PublicKey {
   }
 
   /// Get the algorithm name
-  fn alg(&self) -> String {
+  fn alg(&self) -> AlgorithmName {
     match self {
-      Self::EcdsaP256Sha256(_) => "ecdsa-p256-sha256".to_string(),
-      Self::EcdsaP384Sha384(_) => "ecdsa-p384-sha384".to_string(),
-      Self::Ed25519(_) => "ed25519".to_string(),
+      Self::EcdsaP256Sha256(_) => AlgorithmName::EcdsaP256Sha256,
+      Self::EcdsaP384Sha384(_) => AlgorithmName::EcdsaP384Sha384,
+      Self::Ed25519(_) => AlgorithmName::Ed25519,
     }
   }
 }
