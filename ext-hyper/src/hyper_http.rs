@@ -410,18 +410,18 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let headers = req.headers_mut();
     headers.insert(
       "signature-input",
-      http::HeaderValue::from_static(r##"sig1=("@method" "@authority");created=1704972031"##),
+      http::HeaderValue::from_static(r##"sig11=("@method" "@authority");created=1704972031"##),
     );
     headers.insert(
       "signature",
       http::HeaderValue::from_static(
-        r##"sig1=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:"##,
+        r##"sig11=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:"##,
       ),
     );
 
     let tuples = extract_name_param_signature_tuple_from_request(&req).unwrap();
     assert_eq!(tuples.len(), 1);
-    assert_eq!(tuples[0].name, "sig1");
+    assert_eq!(tuples[0].name, "sig11");
     assert_eq!(
       tuples[0].signature_params.to_string(),
       r##"("@method" "@authority");created=1704972031"##
