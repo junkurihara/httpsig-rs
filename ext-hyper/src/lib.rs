@@ -1,7 +1,13 @@
 mod hyper_content_digest;
 mod hyper_http;
 
+// hyper's http specific extension to generate and verify http signature
+
+/// content-digest header name
 const CONTENT_DIGEST_HEADER: &str = "content-digest";
+
+pub use hyper_content_digest::{ContentDigest, RequestContentDigest};
+pub use hyper_http::RequestMessageSignature;
 
 /// content-digest header type
 pub enum ContentDigestType {
@@ -17,15 +23,3 @@ impl std::fmt::Display for ContentDigestType {
     }
   }
 }
-
-// TODO: creating signature base from http header lines and signature params builder config
-
-// TODO: creating signature base from http header lines including signature params
-
-// TODO: These should be given as a trait
-
-// /// A trait to generate the http message signature
-// /// TODO: signature params should be given as a trait
-// pub trait HttpMessageSignature {
-//   fn message_signature(&self) -> String;
-// }

@@ -12,8 +12,8 @@ pub struct HttpSignatureBase {
 impl HttpSignatureBase {
   /// Creates a new signature base from component lines and signature params
   /// This should not be exposed to user and not used directly.
-  /// TODO: Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
-  /// TODO: When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
+  /// Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
+  /// When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
   pub fn try_new(component_lines: &Vec<HttpMessageComponent>, signature_params: &HttpSignatureParams) -> anyhow::Result<Self> {
     // check if the order of component lines is the same as the order of covered message component ids
     if component_lines.len() != signature_params.covered_components.len() {

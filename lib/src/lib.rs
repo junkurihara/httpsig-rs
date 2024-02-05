@@ -2,7 +2,6 @@ mod crypto;
 mod message_component;
 mod signature_base;
 mod signature_params;
-mod signer;
 mod trace;
 mod util;
 
@@ -71,12 +70,4 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
     let verification_result = pk.verify(SIGNATURE_BASE.as_bytes(), &signature_bytes);
     assert!(verification_result.is_ok());
   }
-
-  // #[test]
-  // fn test_http_signature_params() {
-  //   let signature_params_str =
-  //     r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
-  //   // let signature_params = HttpSignatureParams::try_from(signature_params_str).unwrap();
-  //   // assert_eq!(signature_params.to_string(), signature_params_str);
-  // }
 }

@@ -15,13 +15,13 @@ use rustc_hash::FxHashMap as HashMap;
 /// Default signature name used to indicate signature in http header (`signature` and `signature-input`)
 const DEFAULT_SIGNATURE_NAME: &str = "sig";
 
-// hyper's http specific extension to generate and verify http signature
-
 /* --------------------------------------- */
 #[async_trait]
 /// A trait to set the http message signature from given http signature params
 pub trait RequestMessageSignature {
   type Error;
+
+  /// Set the http message signature from given http signature params and signing key
   async fn set_message_signature<T>(
     &mut self,
     signature_params: &HttpSignatureParams,
@@ -32,11 +32,13 @@ pub trait RequestMessageSignature {
     Self: Sized,
     T: SigningKey + Sync;
 
+  /// Verify the http message signature with given verifying key if the request has signature and signature-input headers
   async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> std::result::Result<bool, Self::Error>
   where
     Self: Sized,
     T: VerifyingKey + Sync;
 
+  /// Check if the request has signature and signature-input headers
   fn has_message_signature(&self) -> bool;
 }
 
