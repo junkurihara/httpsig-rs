@@ -1,5 +1,6 @@
 use anyhow::{bail, ensure};
 use async_trait::async_trait;
+use base64::{engine::general_purpose, Engine as _};
 use http::Request;
 use http_body::Body;
 use httpsig::prelude::{
@@ -7,9 +8,11 @@ use httpsig::prelude::{
     build_http_message_component, DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
     HttpMessageComponentParam,
   },
-  HttpSignatureBase, HttpSignatureParams,
+  HttpSignatureBase, HttpSignatureParams, SigningKey,
 };
-//
+
+/// Default signature name used to indicate signature in http header (`signature` and `signature-input`)
+const DEFAULT_SIGNATURE_NAME: &str = "sig";
 
 // hyper's http specific extension to generate and verify http signature
 
@@ -18,9 +21,15 @@ use httpsig::prelude::{
 /// A trait to set the http message signature from given http signature params
 pub trait HyperRequestMessageSignature {
   type Error;
-  async fn set_message_signature(&mut self, signature_params: &HttpSignatureParams) -> std::result::Result<(), Self::Error>
+  async fn set_message_signature<T>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    sigining_key: &T,
+    signature_name: Option<&str>,
+  ) -> std::result::Result<(), Self::Error>
   where
-    Self: Sized;
+    Self: Sized,
+    T: SigningKey + Sync;
 }
 
 #[async_trait]
@@ -30,24 +39,28 @@ where
 {
   type Error = anyhow::Error;
 
-  async fn set_message_signature(&mut self, signature_params: &HttpSignatureParams) -> std::result::Result<(), Self::Error>
+  async fn set_message_signature<T>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    sigining_key: &T,
+    signature_name: Option<&str>,
+  ) -> std::result::Result<(), Self::Error>
   where
     Self: Sized,
+    T: SigningKey + Sync,
   {
-    // let component_lines = signature_params
-    //   .covered_components
-    //   .iter()
-    //   .map(|component_id_str| {
-    //     let component_id = HttpMessageComponentName::from(component_id_str.as_str());
+    let signature_base = build_signature_base_from_request(self, signature_params)?;
+    let signature_base_bytes = signature_base.as_bytes();
+    let signature = sigining_key.sign(&signature_base_bytes)?;
+    let base64_signature = general_purpose::STANDARD.encode(signature);
+    let signature_name = signature_name.unwrap_or(DEFAULT_SIGNATURE_NAME);
 
-    //     extract_component_from_request(self, &component_id)
-    //   })
-    //   .collect::<Vec<_>>();
-
-    // anyhow::ensure!(component_lines.iter().all(|c| c.is_ok()), "Failed to extract component lines");
-    // let component_lines = component_lines.into_iter().map(|c| c.unwrap()).collect::<Vec<_>>();
-
-    // let signature_base = SignatureBase::try_new(&component_lines, signature_params);
+    let signature_input_header_value = format!("{signature_name}={signature_params}");
+    let signature_header_value = format!("{signature_name}=:{base64_signature}:");
+    self
+      .headers_mut()
+      .append("signature-input", signature_input_header_value.parse()?);
+    self.headers_mut().append("signature", signature_header_value.parse()?);
 
     Ok(())
   }
@@ -160,9 +173,22 @@ fn extract_http_message_component_from_request<B>(
 /* --------------------------------------- */
 #[cfg(test)]
 mod tests {
-  use super::super::{hyper_content_digest::HyperRequestContentDigest, ContentDigestType};
-  use super::*;
+  use super::{
+    super::{hyper_content_digest::HyperRequestContentDigest, ContentDigestType},
+    *,
+  };
   use http_body_util::Full;
+  use httpsig::prelude::SecretKey;
+
+  const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
+-----END PRIVATE KEY-----
+"##;
+  const _EDDSA_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
+-----END PUBLIC KEY-----
+"##;
+  const _EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
 
   async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
@@ -175,6 +201,15 @@ mod tests {
       .body(body)
       .unwrap();
     req.set_content_digest(&ContentDigestType::Sha256).await
+  }
+
+  fn build_covered_components() -> Vec<HttpMessageComponentId> {
+    vec![
+      HttpMessageComponentId::try_from("@method").unwrap(),
+      HttpMessageComponentId::try_from("date").unwrap(),
+      HttpMessageComponentId::try_from("content-type").unwrap(),
+      HttpMessageComponentId::try_from("content-digest").unwrap(),
+    ]
   }
 
   #[tokio::test]
@@ -238,5 +273,19 @@ mod tests {
 "content-digest": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
 "@signature-params": ("@method" "content-type" "date" "content-digest");created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##
     );
+  }
+
+  #[tokio::test]
+  async fn test_set_message_signature() {
+    let mut req = build_request().await.unwrap();
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+    let signature_input = req.headers().get("signature-input").unwrap().to_str().unwrap();
+    assert!(signature_input.starts_with(r##"sig=("@method" "date" "content-type" "content-digest")"##));
+    let signature = req.headers().get("signature").unwrap().to_str().unwrap();
+    println!("{}", signature);
   }
 }

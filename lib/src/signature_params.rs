@@ -212,7 +212,7 @@ mod tests {
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 -----END PRIVATE KEY-----
 "##;
-  const EDDSA_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
+  const _EDDSA_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 -----END PUBLIC KEY-----
 "##;

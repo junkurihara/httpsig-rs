@@ -6,11 +6,6 @@ mod signer;
 mod trace;
 mod util;
 
-use crate::{
-  crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
-  // signature_params::{HttpSignatureParams, HttpSignatureParamsBuilder},
-};
-
 pub mod prelude {
   pub mod message_component {
     pub use crate::message_component::{
@@ -19,12 +14,17 @@ pub mod prelude {
     };
   }
 
-  pub use crate::{signature_base::HttpSignatureBase, signature_params::HttpSignatureParams};
+  pub use crate::{
+    crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey},
+    signature_base::HttpSignatureBase,
+    signature_params::HttpSignatureParams,
+  };
 }
 
 #[cfg(test)]
 mod tests {
-  use super::*;
+  // use super::*;
+  use crate::crypto::{PublicKey, SecretKey, SigningKey, VerifyingKey};
   use base64::{engine::general_purpose, Engine as _};
   // params from https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#name-signing-a-request-using-ed2
   const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
@@ -72,11 +72,11 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
     assert!(verification_result.is_ok());
   }
 
-  #[test]
-  fn test_http_signature_params() {
-    let signature_params_str =
-      r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
-    // let signature_params = HttpSignatureParams::try_from(signature_params_str).unwrap();
-    // assert_eq!(signature_params.to_string(), signature_params_str);
-  }
+  // #[test]
+  // fn test_http_signature_params() {
+  //   let signature_params_str =
+  //     r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
+  //   // let signature_params = HttpSignatureParams::try_from(signature_params_str).unwrap();
+  //   // assert_eq!(signature_params.to_string(), signature_params_str);
+  // }
 }
