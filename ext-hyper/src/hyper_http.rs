@@ -147,10 +147,8 @@ fn extract_name_param_signature_tuple_from_request<B>(req: &Request<B>) -> anyho
     .iter()
     .flat_map(|v| split_comma_extract_kv(v.to_str().unwrap_or("")))
     .map(|(k, v)| {
-      println!("{}, {}", k, v);
       ensure!(!v.is_empty(), "invalid signature-input format");
       let v = HttpSignatureParams::try_from(v);
-      println!("{:?}", v);
       let v = v?;
       Ok((k, v)) as Result<(&str, HttpSignatureParams), anyhow::Error>
     })
