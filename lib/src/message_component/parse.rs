@@ -1,13 +1,16 @@
 use super::{
-  HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName, HttpMessageComponentParam, HttpMessageComponentValue,
+  component_name::DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
+  HttpMessageComponentParam, HttpMessageComponentValue,
 };
 use crate::trace::*;
 use anyhow::{bail, ensure};
 use sfv::{Parser, SerializeValue};
 
-
 /// Build derived component from given id and its associated field values
-pub(super) fn build_derived_component(id: &HttpMessageComponentId, field_values: &[String]) -> anyhow::Result<HttpMessageComponent> {
+pub(super) fn build_derived_component(
+  id: &HttpMessageComponentId,
+  field_values: &[String],
+) -> anyhow::Result<HttpMessageComponent> {
   let HttpMessageComponentName::Derived(derived_id) = &id.name else {
     bail!("invalid http message component name as derived component");
   };
@@ -22,15 +25,15 @@ pub(super) fn build_derived_component(id: &HttpMessageComponentId, field_values:
   );
 
   let value = match derived_id {
-    super::DerivedComponentName::Method => HttpMessageComponentValue::from(field_values[0].to_ascii_uppercase().as_ref()),
-    super::DerivedComponentName::TargetUri => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
-    super::DerivedComponentName::Authority => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
-    super::DerivedComponentName::Scheme => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
-    super::DerivedComponentName::RequestTarget => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
-    super::DerivedComponentName::Path => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
-    super::DerivedComponentName::Query => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
-    super::DerivedComponentName::Status => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
-    super::DerivedComponentName::QueryParam => {
+    DerivedComponentName::Method => HttpMessageComponentValue::from(field_values[0].to_ascii_uppercase().as_ref()),
+    DerivedComponentName::TargetUri => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Authority => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
+    DerivedComponentName::Scheme => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
+    DerivedComponentName::RequestTarget => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Path => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Query => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Status => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::QueryParam => {
       let name = id.params.0.iter().find_map(|p| match p {
         HttpMessageComponentParam::Name(name) => Some(name),
         _ => None,
@@ -46,7 +49,7 @@ pub(super) fn build_derived_component(id: &HttpMessageComponentId, field_values:
         .collect::<Vec<_>>();
       HttpMessageComponentValue::from(kvs.join(", ").as_ref())
     }
-    super::DerivedComponentName::SignatureParams => {
+    DerivedComponentName::SignatureParams => {
       let value = field_values[0].to_string();
       let opt_pair = value.trim().split_once('=');
       ensure!(opt_pair.is_some(), "invalid signature-params derived component");
@@ -60,7 +63,10 @@ pub(super) fn build_derived_component(id: &HttpMessageComponentId, field_values:
 
 /// Build http field component from given id and its associated field values
 /// NOTE: field_value must be ones of request for `req` param
-pub(super) fn build_http_field_component(id: &HttpMessageComponentId, field_values: &[String]) -> anyhow::Result<HttpMessageComponent> {
+pub(super) fn build_http_field_component(
+  id: &HttpMessageComponentId,
+  field_values: &[String],
+) -> anyhow::Result<HttpMessageComponent> {
   let mut field_values = field_values.to_vec();
   let params = &id.params;
 
