@@ -8,7 +8,6 @@ homepage = "https://github.com/junkurihara/httpsig-rs"
 repository = "https://github.com/junkurihara/httpsig-rs"
 license = "MIT"
 readme = "../README.md"
-publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
