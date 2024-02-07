@@ -16,7 +16,6 @@ This crates provides a basic library [httpsig](../lib) and [its extension](./ext
 ```rust:
 use httpsig_hyper::{prelude::{message_component::*, *}, *};
 
-
 const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 -----END PRIVATE KEY-----
