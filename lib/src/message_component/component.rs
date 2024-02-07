@@ -1,6 +1,6 @@
+use super::parse::{build_derived_component, build_http_field_component};
 use anyhow::{bail, ensure};
 use rustc_hash::FxHashSet as HashSet;
-use super::parse::{build_derived_component, build_http_field_component};
 
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone)]
@@ -15,12 +15,19 @@ pub struct HttpMessageComponent {
 impl TryFrom<&str> for HttpMessageComponent {
   type Error = anyhow::Error;
   /// Create HttpMessageComponent from serialized string, i.e., `"<id>": <value>` of lines in the signature base of HTTP header.
+  /// We suppose that the value was correctly serialized as a line of signature base.
   fn try_from(val: &str) -> Result<Self, Self::Error> {
     let Some((id, value)) = val.split_once(':') else {
       bail!("Invalid http message component: {}", val);
     };
     let id = id.trim();
-    ensure_component_id(id)?;
+
+    // check if id is wrapped by double quotations
+    ensure!(
+      id.starts_with('"') && (id.ends_with('"') || id[1..].contains("\";")),
+      "Invalid http message component id: {}",
+      id
+    );
 
     Ok(Self {
       id: HttpMessageComponentId::try_from(id)?,
@@ -30,22 +37,15 @@ impl TryFrom<&str> for HttpMessageComponent {
 }
 
 impl TryFrom<(&HttpMessageComponentId, &[String])> for HttpMessageComponent {
-    type Error = anyhow::Error;
+  type Error = anyhow::Error;
 
-    /// Build http message component from given id and its associated field values
-    fn try_from((id, field_values): (&HttpMessageComponentId, &[String])) -> Result<Self, Self::Error> {
-      match &id.name {
-        HttpMessageComponentName::HttpField(_) => build_http_field_component(id, field_values),
-        HttpMessageComponentName::Derived(_) => build_derived_component(id, field_values),
-      }
+  /// Build http message component from given id and its associated field values
+  fn try_from((id, field_values): (&HttpMessageComponentId, &[String])) -> Result<Self, Self::Error> {
+    match &id.name {
+      HttpMessageComponentName::HttpField(_) => build_http_field_component(id, field_values),
+      HttpMessageComponentName::Derived(_) => build_derived_component(id, field_values),
     }
-}
-
-fn ensure_component_id(id: &str) -> anyhow::Result<()> {
-  if !id.starts_with('"') || !(id.ends_with('"') || id[1..].contains("\";")) {
-    bail!("Invalid http message component id: {}", id);
   }
-  Ok(())
 }
 
 impl std::fmt::Display for HttpMessageComponent {
