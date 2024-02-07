@@ -45,6 +45,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 "##;
   // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
 
+  const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
+
   async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
     let req = Request::builder()
@@ -56,15 +58,6 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       .body(body)
       .unwrap();
     req.set_content_digest(&ContentDigestType::Sha256).await
-  }
-
-  fn build_covered_components() -> Vec<HttpMessageComponentId> {
-    vec![
-      HttpMessageComponentId::try_from("@method").unwrap(),
-      HttpMessageComponentId::try_from("date").unwrap(),
-      HttpMessageComponentId::try_from("content-type").unwrap(),
-      HttpMessageComponentId::try_from("content-digest").unwrap(),
-    ]
   }
 
   #[test]
@@ -80,7 +73,13 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let mut req = build_request().await.unwrap();
 
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
-    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+
+    let covered_components = COVERED_COMPONENTS
+      .iter()
+      .map(|v| HttpMessageComponentId::try_from(*v))
+      .collect::<Result<Vec<_>, _>>()
+      .unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
 
     // set key information, alg and keyid
     signature_params.set_key_info(&secret_key);

@@ -3,7 +3,7 @@ use anyhow::Result;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
-type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+type HmacSha256 = Hmac<sha2::Sha256>;
 
 /* -------------------------------- */
 /// Shared key for http signature
