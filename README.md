@@ -1,5 +1,9 @@
 # httpsig-rs
 
+> **Work in Progress**
+
+[![httpsig](https://img.shields.io/crates/v/httpsig.svg)](https://crates.io/crates/httpsig)
+[![httpsig](https://docs.rs/httpsig/badge.svg)](https://docs.rs/httpsig)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
 
@@ -7,7 +11,7 @@ Implementation of [IETF draft of http message signatures](https://datatracker.ie
 
 This crates provides a basic library [httpsig](../lib) and [its extension](./ext-hyper/) of `hyper`'s http library. At this point, our library can sign and verify only request messages of hyper. (TODO: response message signature)
 
-## Usage of extension for hyper
+## Usage of Extension for hyper (httpsig-hyper)
 
 ```rust:
 use httpsig_hyper::{prelude::{message_component::*, *}, *};
