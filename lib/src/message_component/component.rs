@@ -1,7 +1,10 @@
-use super::parse::{build_derived_component, build_http_field_component};
 use super::{
-  component_id::HttpMessageComponentId, component_name::HttpMessageComponentName, component_value::HttpMessageComponentValue,
+  component_id::HttpMessageComponentId,
+  component_name::{DerivedComponentName, HttpMessageComponentName},
+  component_param::{handle_params_key_into, handle_params_sf, HttpMessageComponentParam},
+  component_value::HttpMessageComponentValue,
 };
+use crate::trace::*;
 use anyhow::{bail, ensure};
 
 /* ---------------------------------------------------------------- */
@@ -59,9 +62,102 @@ impl std::fmt::Display for HttpMessageComponent {
 }
 
 /* ---------------------------------------------------------------- */
+/// Build derived component from given id and its associated field values
+pub(super) fn build_derived_component(
+  id: &HttpMessageComponentId,
+  field_values: &[String],
+) -> anyhow::Result<HttpMessageComponent> {
+  let HttpMessageComponentName::Derived(derived_id) = &id.name else {
+    bail!("invalid http message component name as derived component");
+  };
+  ensure!(!field_values.is_empty(), "derived component requires field values");
+  // ensure only `req` and `name` are allowed for derived component parameters
+  ensure!(
+    id.params
+      .0
+      .iter()
+      .all(|p| matches!(p, HttpMessageComponentParam::Req | HttpMessageComponentParam::Name(_))),
+    "invalid parameter for derived component"
+  );
+
+  let value = match derived_id {
+    DerivedComponentName::Method => HttpMessageComponentValue::from(field_values[0].to_ascii_uppercase().as_ref()),
+    DerivedComponentName::TargetUri => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Authority => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
+    DerivedComponentName::Scheme => HttpMessageComponentValue::from(field_values[0].to_ascii_lowercase().as_ref()),
+    DerivedComponentName::RequestTarget => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Path => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Query => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::Status => HttpMessageComponentValue::from(field_values[0].to_string().as_ref()),
+    DerivedComponentName::QueryParam => {
+      let name = id.params.0.iter().find_map(|p| match p {
+        HttpMessageComponentParam::Name(name) => Some(name),
+        _ => None,
+      });
+      ensure!(name.is_some(), "query-param derived component requires name parameter");
+      let name = name.unwrap();
+      let kvs = field_values
+        .iter()
+        .filter(|v| v.contains('='))
+        .map(|v| v.split_once('=').unwrap())
+        .filter(|(k, _)| *k == name.as_str())
+        .map(|(_, v)| v)
+        .collect::<Vec<_>>();
+      HttpMessageComponentValue::from(kvs.join(", ").as_ref())
+    }
+    DerivedComponentName::SignatureParams => {
+      let value = field_values[0].to_string();
+      let opt_pair = value.trim().split_once('=');
+      ensure!(opt_pair.is_some(), "invalid signature-params derived component");
+      let (key, value) = opt_pair.unwrap();
+      HttpMessageComponentValue::from((key, value))
+    }
+  };
+  let component = HttpMessageComponent { id: id.clone(), value };
+  Ok(component)
+}
+
+/* ---------------------------------------------------------------- */
+/// Build http field component from given id and its associated field values
+/// NOTE: field_value must be ones of request for `req` param
+pub(super) fn build_http_field_component(
+  id: &HttpMessageComponentId,
+  field_values: &[String],
+) -> anyhow::Result<HttpMessageComponent> {
+  let mut field_values = field_values.to_vec();
+  let params = &id.params;
+
+  for p in params.0.iter() {
+    match p {
+      HttpMessageComponentParam::Sf => {
+        handle_params_sf(&mut field_values)?;
+      }
+      HttpMessageComponentParam::Key(key) => {
+        field_values = handle_params_key_into(&field_values, key)?;
+      }
+      HttpMessageComponentParam::Bs => bail!("`bs` is not supported yet"),
+      HttpMessageComponentParam::Req => {
+        debug!("`req` is given for http field component");
+      }
+      HttpMessageComponentParam::Tr => bail!("`tr` is not supported yet"),
+      HttpMessageComponentParam::Name(_) => bail!("`name` is only for derived component query-params"),
+    }
+  }
+
+  // TODO: case: some values contains ','
+
+  let field_values_str = field_values.join(", ");
+
+  let component = HttpMessageComponent {
+    id: id.clone(),
+    value: HttpMessageComponentValue::from(field_values_str.as_ref()),
+  };
+  Ok(component)
+}
+
+/* ---------------------------------------------------------------- */
 #[cfg(test)]
 mod tests {
-  use super::super::*;
   use super::*;
 
   use rustc_hash::FxHashSet as HashSet;
@@ -167,5 +263,112 @@ mod tests {
     assert!(comp.is_err());
     let comp = HttpMessageComponent::try_from("\"@method\";key=\"hoge\": POST");
     assert!(comp.is_err());
+  }
+
+  #[test]
+  fn test_build_http_field_component() {
+    let id = HttpMessageComponentId::try_from("content-type").unwrap();
+    let field_values = vec!["application/json".to_owned()];
+    let component = build_http_field_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(component.value, HttpMessageComponentValue::from("application/json"));
+    assert_eq!(component.to_string(), "\"content-type\": application/json");
+  }
+  #[test]
+  fn test_build_http_field_component_multiple_values() {
+    let id = HttpMessageComponentId::try_from("\"content-type\"").unwrap();
+    let field_values = vec!["application/json".to_owned(), "application/json-patch+json".to_owned()];
+    let component = build_http_field_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(
+      component.value,
+      HttpMessageComponentValue::from("application/json, application/json-patch+json")
+    );
+    assert_eq!(
+      component.to_string(),
+      "\"content-type\": application/json, application/json-patch+json"
+    );
+  }
+  #[test]
+  fn test_build_http_field_component_sf() {
+    let id = HttpMessageComponentId::try_from("\"content-type\";sf").unwrap();
+    let field_values = vec![
+      "application/json; patched=true".to_owned(),
+      "application/json-patch+json;patched".to_owned(),
+    ];
+    let component = build_http_field_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(
+      component.value,
+      HttpMessageComponentValue::from("application/json;patched=true, application/json-patch+json;patched")
+    );
+    assert_eq!(
+      component.to_string(),
+      "\"content-type\";sf: application/json;patched=true, application/json-patch+json;patched"
+    );
+  }
+  #[test]
+  fn test_build_http_field_component_key() {
+    let id = HttpMessageComponentId::try_from("\"example-header\";key=\"patched\"").unwrap();
+    let field_values = vec!["patched=12345678".to_owned()];
+    let component = build_http_field_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(component.value, HttpMessageComponentValue::from("12345678"));
+    assert_eq!(component.to_string(), "\"example-header\";key=\"patched\": 12345678");
+  }
+  #[test]
+  fn test_build_http_field_component_key_multiple_values() {
+    let id = HttpMessageComponentId::try_from("\"example-header\";key=\"patched\"").unwrap();
+    let field_values = vec![
+      "patched=12345678".to_owned(),
+      "patched=87654321".to_owned(),
+      "not-patched=12345678".to_owned(),
+    ];
+    let component = build_http_field_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(component.value, HttpMessageComponentValue::from("12345678, 87654321"));
+    assert_eq!(
+      component.to_string(),
+      "\"example-header\";key=\"patched\": 12345678, 87654321"
+    );
+  }
+
+  #[test]
+  fn test_build_derived_component() {
+    let id = HttpMessageComponentId::try_from("@method").unwrap();
+    let field_values = vec!["GET".to_owned()];
+    let component = build_derived_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(component.value, HttpMessageComponentValue::from("GET"));
+    assert_eq!(component.to_string(), "\"@method\": GET");
+
+    let id = HttpMessageComponentId::try_from("@target-uri").unwrap();
+    let field_values = vec!["https://example.com/foo".to_owned()];
+    let component = build_derived_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(component.value, HttpMessageComponentValue::from("https://example.com/foo"));
+    assert_eq!(component.to_string(), "\"@target-uri\": https://example.com/foo");
+  }
+  #[test]
+  fn test_build_http_field_component_query_param() {
+    let id = HttpMessageComponentId::try_from("\"@query-param\";name=\"var\"").unwrap();
+    let query_param = "var=this%20is%20a%20big%0Amultiline%20value&bar=with+plus+whitespace&fa%C3%A7ade%22%3A%20=something&ok";
+    let field_values = query_param.split('&').map(|v| v.to_owned()).collect::<Vec<_>>();
+    let component = build_derived_component(&id, &field_values).unwrap();
+    assert_eq!(component.id, id);
+    assert_eq!(
+      component.value,
+      HttpMessageComponentValue::from("this%20is%20a%20big%0Amultiline%20value")
+    );
+    assert_eq!(
+      component.to_string(),
+      "\"@query-param\";name=\"var\": this%20is%20a%20big%0Amultiline%20value"
+    );
+  }
+
+  #[test]
+  fn test_disallow_invalid_params() {
+    let id = HttpMessageComponentId::try_from("\"@method\";key=\"patched\"");
+    assert!(id.is_err());
   }
 }

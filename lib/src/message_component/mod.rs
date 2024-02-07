@@ -3,10 +3,12 @@ mod component_id;
 mod component_name;
 mod component_param;
 mod component_value;
-mod parse;
 
-pub use component::HttpMessageComponent;
-pub use component_id::HttpMessageComponentId;
-pub use component_name::{DerivedComponentName, HttpMessageComponentName};
-pub use component_param::HttpMessageComponentParam;
-pub use component_value::HttpMessageComponentValue;
+#[allow(unused)]
+pub use {
+  component::HttpMessageComponent,
+  component_id::HttpMessageComponentId,
+  component_name::{DerivedComponentName, HttpMessageComponentName},
+  component_param::HttpMessageComponentParam,
+  component_value::HttpMessageComponentValue,
+};

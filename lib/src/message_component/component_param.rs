@@ -1,4 +1,6 @@
+use anyhow::{bail, ensure};
 use rustc_hash::FxHashSet as HashSet;
+use sfv::{Parser, SerializeValue};
 
 /* ---------------------------------------------------------------- */
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
@@ -87,5 +89,92 @@ impl std::fmt::Display for HttpMessageComponentParams {
     } else {
       Ok(())
     }
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/// Handle `sf` parameter
+pub(super) fn handle_params_sf(field_values: &mut [String]) -> anyhow::Result<()> {
+  let parsed_list = field_values
+    .iter()
+    .map(|v| {
+      if let Ok(list) = Parser::parse_list(v.as_bytes()) {
+        list.serialize_value()
+      } else if let Ok(dict) = Parser::parse_dictionary(v.as_bytes()) {
+        dict.serialize_value()
+      } else {
+        bail!("invalid structured field value for sf");
+      }
+      .map_err(|e| anyhow::anyhow!("{e}"))
+    })
+    .collect::<Vec<_>>();
+
+  ensure!(
+    parsed_list.iter().all(|v| v.is_ok()),
+    "Failed to parse structured field value"
+  );
+  field_values.iter_mut().zip(parsed_list).for_each(|(v, p)| {
+    *v = p.unwrap();
+  });
+
+  Ok(())
+}
+
+/* ---------------------------------------------------------------- */
+/// Handle `key` parameter, returns new field values
+pub(super) fn handle_params_key_into(field_values: &[String], key: &str) -> anyhow::Result<Vec<String>> {
+  let dicts = field_values
+    .iter()
+    .map(|v| Parser::parse_dictionary(v.as_bytes()))
+    .collect::<Vec<_>>();
+  ensure!(dicts.iter().all(|v| v.is_ok()), "Failed to parse structured field value");
+
+  let found_entries = dicts
+    .into_iter()
+    .map(|v| v.unwrap())
+    .filter_map(|dict| {
+      dict.get(key).map(|v| {
+        let sfvalue: sfv::List = vec![v.clone()];
+        sfvalue
+      })
+    })
+    .map(|v| v.serialize_value().map_err(|e| anyhow::anyhow!("{e}")))
+    .collect::<Vec<_>>();
+
+  ensure!(
+    found_entries.iter().all(|v| v.is_ok()),
+    "Failed to serialize structured field value"
+  );
+
+  let found_entries = found_entries.into_iter().map(|v| v.unwrap()).collect::<Vec<_>>();
+
+  Ok(found_entries)
+}
+
+/* ---------------------------------------------------------------- */
+
+mod tests {
+  #[allow(unused)]
+  use super::*;
+
+  #[test]
+  fn parser_test() {
+    // Parsing structured field value of Item type.
+    let item_header_input = "12.445;foo=bar";
+    let item = Parser::parse_item(item_header_input.as_bytes()).unwrap();
+    assert_eq!(item.serialize_value().unwrap(), item_header_input);
+
+    // Parsing structured field value of List type.
+    let list_header_input = "  1; a=tok, (\"foo\"   \"bar\" );baz, (  )";
+    let list = Parser::parse_list(list_header_input.as_bytes()).unwrap();
+    assert_eq!(list.serialize_value().unwrap(), "1;a=tok, (\"foo\" \"bar\");baz, ()");
+
+    // Parsing structured field value of Dictionary type.
+    let dict_header_input = "a=?0, b, c; foo=bar, rating=1.5, fruits=(apple pear), d";
+    let dict = Parser::parse_dictionary(dict_header_input.as_bytes()).unwrap();
+    assert_eq!(
+      dict.serialize_value().unwrap(),
+      "a=?0, b, c;foo=bar, rating=1.5, fruits=(apple pear), d"
+    );
   }
 }

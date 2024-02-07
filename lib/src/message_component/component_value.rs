@@ -31,7 +31,9 @@ impl std::fmt::Display for HttpMessageComponentValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Http message component value inner, simple string or key-value pair
 enum HttpMessageComponentValueInner {
+  /// Simple string value
   String(String),
+  /// Key value pair, typically used for the value like `sig1=:xxxxx:` of signature-input
   KeyValue((String, String)),
 }
 
