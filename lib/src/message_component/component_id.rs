@@ -2,7 +2,8 @@ use super::{
   component_name::{DerivedComponentName, HttpMessageComponentName},
   component_param::{HttpMessageComponentParam, HttpMessageComponentParams},
 };
-use anyhow::{bail, ensure};
+use anyhow::ensure;
+use sfv::Parser;
 
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -29,31 +30,21 @@ impl std::fmt::Display for HttpMessageComponentId {
 
 impl TryFrom<&str> for HttpMessageComponentId {
   type Error = anyhow::Error;
+  /// Parse http message component id from string
+  /// Accept `"<name>";<params>` or `"<name>"` (with double quotations).
+  /// But accept string in the form of `<name>` (without double quotations) when no param is given
   fn try_from(val: &str) -> std::result::Result<Self, Self::Error> {
-    let (name, params) = if val.contains(';') {
-      val.split_once(';').unwrap()
+    let val = val.trim();
+    let item = if !val.starts_with('"') && !val.ends_with('"') && !val.is_empty() && !val.contains('"') {
+      // maybe insufficient, but it's enough for now
+      Parser::parse_item(format!("\"{val}\"").as_bytes()).map_err(|e| anyhow::anyhow!(e))?
     } else {
-      (val, "")
-    };
-    Self::try_from((name, params))
-  }
-}
-
-impl TryFrom<(&str, &str)> for HttpMessageComponentId {
-  type Error = anyhow::Error;
-  fn try_from((name, params): (&str, &str)) -> std::result::Result<Self, Self::Error> {
-    let name = name.trim();
-    let inner_name = if name.starts_with('"') && name.ends_with('"') {
-      name[1..name.len() - 1].to_string()
-    } else if !name.starts_with('"') && !name.ends_with('"') {
-      name.to_string()
-    } else {
-      bail!("Invalid http message component name: {}", name);
+      Parser::parse_item(val.as_bytes()).map_err(|e| anyhow::anyhow!(e))?
     };
 
     let res = Self {
-      name: HttpMessageComponentName::from(inner_name.as_ref()),
-      params: HttpMessageComponentParams::from(params),
+      name: HttpMessageComponentName::try_from(&item.bare_item)?,
+      params: HttpMessageComponentParams::try_from(&item.params)?,
     };
 
     // assert for query param

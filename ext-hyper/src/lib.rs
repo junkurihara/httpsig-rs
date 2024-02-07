@@ -21,5 +21,91 @@ impl std::fmt::Display for ContentDigestType {
   }
 }
 
+pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest};
 pub use hyper_http::RequestMessageSignature;
+
+#[cfg(test)]
+mod tests {
+  use super::{
+    prelude::{message_component::*, *},
+    *,
+  };
+  use http::Request;
+  use http_body_util::Full;
+  use httpsig::prelude::{PublicKey, SecretKey};
+
+  const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
+-----END PRIVATE KEY-----
+"##;
+  const EDDSA_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
+-----END PUBLIC KEY-----
+"##;
+  // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
+
+  async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
+    let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
+    let req = Request::builder()
+      .method("GET")
+      .uri("https://example.com/parameters?var=this%20is%20a%20big%0Amultiline%20value&bar=with+plus+whitespace&fa%C3%A7ade%22%3A%20=something")
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .header("content-type", "application/json")
+      .header("content-type", "application/json-patch+json")
+      .body(body)
+      .unwrap();
+    req.set_content_digest(&ContentDigestType::Sha256).await
+  }
+
+  fn build_covered_components() -> Vec<HttpMessageComponentId> {
+    vec![
+      HttpMessageComponentId::try_from("@method").unwrap(),
+      HttpMessageComponentId::try_from("date").unwrap(),
+      HttpMessageComponentId::try_from("content-type").unwrap(),
+      HttpMessageComponentId::try_from("content-digest").unwrap(),
+    ]
+  }
+
+  #[test]
+  fn test_content_digest_type() {
+    assert_eq!(ContentDigestType::Sha256.to_string(), "sha-256");
+    assert_eq!(ContentDigestType::Sha512.to_string(), "sha-512");
+  }
+
+  #[tokio::test]
+  async fn test_set_verify() {
+    // show usage of set_message_signature and verify_message_signature
+
+    let mut req = build_request().await.unwrap();
+
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+
+    // set key information, alg and keyid
+    signature_params.set_key_info(&secret_key);
+
+    // set custom signature name
+    req
+      .set_message_signature(&signature_params, &secret_key, Some("custom_sig_name"))
+      .await
+      .unwrap();
+    let signature_input = req.headers().get("signature-input").unwrap().to_str().unwrap();
+    let signature = req.headers().get("signature").unwrap().to_str().unwrap();
+    assert!(signature_input.starts_with(r##"custom_sig_name=("##));
+    assert!(signature.starts_with(r##"custom_sig_name=:"##));
+
+    // verify without checking key_id
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = req.verify_message_signature(&public_key, None).await.unwrap();
+    assert!(verification_res);
+
+    // verify with checking key_id
+    let key_id = public_key.key_id();
+    let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await.unwrap();
+    assert!(verification_res);
+
+    let verification_res = req.verify_message_signature(&public_key, Some("NotFoundKeyId")).await;
+    assert!(verification_res.is_err());
+  }
+}

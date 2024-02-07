@@ -159,8 +159,8 @@ pub(super) fn build_http_field_component(
 #[cfg(test)]
 mod tests {
   use super::*;
+  type IndexSet<K> = indexmap::IndexSet<K, fxhash::FxBuildHasher>;
 
-  use rustc_hash::FxHashSet as HashSet;
   #[test]
   fn test_from_serialized_string_derived() {
     let tuples = vec![
@@ -178,7 +178,7 @@ mod tests {
       let comp = HttpMessageComponent::try_from(format!("{}: {}", id, value).as_ref()).unwrap();
       assert_eq!(comp.id.name, HttpMessageComponentName::Derived(name));
       if !id.contains(';') {
-        assert_eq!(comp.id.params.0, HashSet::default());
+        assert_eq!(comp.id.params.0, IndexSet::default());
       } else {
         assert!(!comp.id.params.0.is_empty());
       }
@@ -214,7 +214,7 @@ mod tests {
       let comp = HttpMessageComponent::try_from(format!("{}: {}", id, value).as_ref()).unwrap();
       assert_eq!(comp.id.name, HttpMessageComponentName::HttpField(inner_name.to_string()));
       if !id.contains(';') {
-        assert_eq!(comp.id.params.0, HashSet::default());
+        assert_eq!(comp.id.params.0, IndexSet::default());
       } else {
         assert!(!comp.id.params.0.is_empty());
       }
@@ -234,7 +234,7 @@ mod tests {
       comp.id.params.0,
       vec![HttpMessageComponentParam::Bs, HttpMessageComponentParam::Tr]
         .into_iter()
-        .collect::<HashSet<_>>()
+        .collect::<IndexSet<_>>()
     );
   }
 
@@ -249,7 +249,7 @@ mod tests {
       comp.id.params.0,
       vec![HttpMessageComponentParam::Key("hoge".to_string())]
         .into_iter()
-        .collect::<HashSet<_>>()
+        .collect::<IndexSet<_>>()
     );
   }
 

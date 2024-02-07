@@ -8,12 +8,20 @@ pub enum HttpMessageComponentName {
   Derived(DerivedComponentName),
 }
 
-impl From<&str> for HttpMessageComponentName {
-  fn from(val: &str) -> Self {
-    if val.starts_with('@') {
-      Self::Derived(DerivedComponentName::from(val))
-    } else {
-      Self::HttpField(val.to_string())
+use anyhow::bail;
+use sfv::BareItem;
+impl TryFrom<&BareItem> for HttpMessageComponentName {
+  type Error = anyhow::Error;
+  fn try_from(value: &BareItem) -> Result<Self, Self::Error> {
+    match value {
+      BareItem::String(name) => {
+        if name.starts_with('@') {
+          Ok(Self::Derived(DerivedComponentName::from(name.as_str())))
+        } else {
+          Ok(Self::HttpField(name.to_string()))
+        }
+      }
+      _ => bail!("Invalid http message component name: {:?}", value),
     }
   }
 }

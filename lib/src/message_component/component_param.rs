@@ -1,6 +1,7 @@
 use anyhow::{bail, ensure};
-use rustc_hash::FxHashSet as HashSet;
 use sfv::{Parser, SerializeValue};
+
+type IndexSet<K> = indexmap::IndexSet<K, fxhash::FxBuildHasher>;
 
 /* ---------------------------------------------------------------- */
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
@@ -35,29 +36,31 @@ impl From<HttpMessageComponentParam> for String {
     }
   }
 }
-impl From<&str> for HttpMessageComponentParam {
-  fn from(val: &str) -> Self {
-    match val {
-      "sf" => Self::Sf,
-      "bs" => Self::Bs,
-      "tr" => Self::Tr,
-      "req" => Self::Req,
-      _ => {
-        if val.starts_with("key=\"") && val.ends_with('"') {
-          Self::Key(val[5..val.len() - 1].to_string())
-        } else if val.starts_with("name=\"") && val.ends_with('"') {
-          Self::Name(val[6..val.len() - 1].to_string())
-        } else {
-          panic!("Invalid http field param: {}", val)
-        }
+
+impl TryFrom<(&str, &sfv::BareItem)> for HttpMessageComponentParam {
+  type Error = anyhow::Error;
+  fn try_from((key, val): (&str, &sfv::BareItem)) -> Result<Self, Self::Error> {
+    match key {
+      "sf" => Ok(Self::Sf),
+      "bs" => Ok(Self::Bs),
+      "tr" => Ok(Self::Tr),
+      "req" => Ok(Self::Req),
+      "name" => {
+        let name = val.as_str().ok_or(anyhow::anyhow!("Invalid http field param: name"))?;
+        Ok(Self::Name(name.to_string()))
       }
+      "key" => {
+        let key = val.as_str().ok_or(anyhow::anyhow!("Invalid http field param: key"))?;
+        Ok(Self::Key(key.to_string()))
+      }
+      _ => bail!("Invalid http field param: {}", key),
     }
   }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 /// Http message component parameters
-pub struct HttpMessageComponentParams(pub HashSet<HttpMessageComponentParam>);
+pub struct HttpMessageComponentParams(pub IndexSet<HttpMessageComponentParam>);
 
 impl std::hash::Hash for HttpMessageComponentParams {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -66,16 +69,16 @@ impl std::hash::Hash for HttpMessageComponentParams {
     params.hash(state);
   }
 }
-impl From<&str> for HttpMessageComponentParams {
-  fn from(val: &str) -> Self {
-    let mut hs = HashSet::default();
-    val.split(';').for_each(|v| {
-      if !v.is_empty() {
-        let param = HttpMessageComponentParam::from(v);
-        hs.insert(param);
-      }
-    });
-    Self(hs)
+
+impl TryFrom<&sfv::Parameters> for HttpMessageComponentParams {
+  type Error = anyhow::Error;
+  fn try_from(val: &sfv::Parameters) -> Result<Self, Self::Error> {
+    let hs = val
+      .iter()
+      .map(|(k, v)| HttpMessageComponentParam::try_from((k.as_str(), v)))
+      .collect::<Result<IndexSet<_>, _>>()
+      .map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(Self(hs))
   }
 }
 impl std::fmt::Display for HttpMessageComponentParams {
