@@ -1,5 +1,8 @@
 # httpsig-rs
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
+
 Implementation of [IETF draft of http message signatures](https://datatracker.ietf.org/doc/draft-ietf-httpbis-message-signatures/). Our implementation is currently based on [Draft-19](https://datatracker.ietf.org/doc/draft-ietf-httpbis-message-signatures/19/).
 
 This crates provides a basic library [httpsig](../lib) and [its extension](./ext-hyper/) of `hyper`'s http library. At this point, our library can sign and verify only request messages of hyper. (TODO: response message signature)
