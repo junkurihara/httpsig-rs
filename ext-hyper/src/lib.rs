@@ -6,9 +6,6 @@ mod hyper_http;
 /// content-digest header name
 const CONTENT_DIGEST_HEADER: &str = "content-digest";
 
-pub use hyper_content_digest::{ContentDigest, RequestContentDigest};
-pub use hyper_http::RequestMessageSignature;
-
 /// content-digest header type
 pub enum ContentDigestType {
   Sha256,
@@ -23,3 +20,6 @@ impl std::fmt::Display for ContentDigestType {
     }
   }
 }
+
+pub use hyper_content_digest::{ContentDigest, RequestContentDigest};
+pub use hyper_http::RequestMessageSignature;

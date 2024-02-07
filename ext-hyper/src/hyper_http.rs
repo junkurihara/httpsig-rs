@@ -1,16 +1,17 @@
-use anyhow::{bail, ensure};
+use anyhow::{anyhow, bail, ensure};
 use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine as _};
 use http::Request;
 use http_body::Body;
 use httpsig::prelude::{
   message_component::{
-    DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
-    HttpMessageComponentParam,
+    DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName, HttpMessageComponentParam,
   },
   HttpSignatureBase, HttpSignatureParams, SigningKey, VerifyingKey,
 };
-use rustc_hash::FxHashMap as HashMap;
+use sfv::Parser;
+
+type IndexMap<K, V> = indexmap::IndexMap<K, V, fxhash::FxBuildHasher>;
 
 /// Default signature name used to indicate signature in http header (`signature` and `signature-input`)
 const DEFAULT_SIGNATURE_NAME: &str = "sig";
@@ -60,9 +61,8 @@ where
     Self: Sized,
     T: SigningKey + Sync,
   {
-    let signature_base = build_signature_base_from_request(self, signature_params)?;
-    let signature_base_bytes = signature_base.as_bytes();
-    let signature = signing_key.sign(&signature_base_bytes)?;
+    let signature_base = build_signature_base_from_request(self, signature_params)?.as_bytes();
+    let signature = signing_key.sign(&signature_base)?;
     let base64_signature = general_purpose::STANDARD.encode(signature);
     let signature_name = signature_name.unwrap_or(DEFAULT_SIGNATURE_NAME);
 
@@ -118,17 +118,6 @@ where
     self.headers().contains_key("signature") && self.headers().contains_key("signature-input")
   }
 }
-/* --------------------------------------- */
-fn split_comma_extract_kv(s: &str) -> Vec<(&str, &str)> {
-  s.split(',')
-    .filter(|s| !s.is_empty())
-    .map(|s| {
-      let trimmed = s.trim();
-      trimmed.split_once('=').unwrap_or_default()
-    })
-    .map(|(k, v)| (k.trim(), v.trim()))
-    .collect()
-}
 
 /* --------------------------------------- */
 #[allow(unused)]
@@ -140,36 +129,20 @@ struct SignatureTuple {
 /// Extract signature and signature-input with signature-name indication from http request
 fn extract_name_param_signature_tuple_from_request<B>(req: &Request<B>) -> anyhow::Result<Vec<SignatureTuple>> {
   ensure!(req.headers().contains_key("signature-input") && req.headers().contains_key("signature"));
-
   let signature_inputs = req
     .headers()
     .get_all("signature-input")
     .iter()
-    .flat_map(|v| split_comma_extract_kv(v.to_str().unwrap_or("")))
-    .map(|(k, v)| {
-      ensure!(!v.is_empty(), "invalid signature-input format");
-      let v = HttpSignatureParams::try_from(v);
-      let v = v?;
-      Ok((k, v)) as Result<(&str, HttpSignatureParams), anyhow::Error>
-    })
-    .filter_map(|r| r.ok())
-    .collect::<HashMap<_, _>>();
-
+    .flat_map(|v| Parser::parse_dictionary(v.as_bytes()))
+    .flatten()
+    .collect::<IndexMap<_, _>>();
   let signatures = req
     .headers()
     .get_all("signature")
     .iter()
-    .flat_map(|v| split_comma_extract_kv(v.to_str().unwrap_or("")))
-    .map(|(k, v)| {
-      ensure!(
-        !v.is_empty() && v.starts_with(':') && v.ends_with(':'),
-        "invalid signature format"
-      );
-      let v = general_purpose::STANDARD.decode(&v[1..v.len() - 1])?;
-      Ok((k, v)) as Result<_, anyhow::Error>
-    })
-    .filter_map(|r| r.ok())
-    .collect::<HashMap<_, _>>();
+    .flat_map(|v| Parser::parse_dictionary(v.as_bytes()))
+    .flatten()
+    .collect::<IndexMap<_, _>>();
 
   ensure!(
     signature_inputs.len() == signatures.len(),
@@ -183,14 +156,20 @@ fn extract_name_param_signature_tuple_from_request<B>(req: &Request<B>) -> anyho
   let tuples = signature_inputs
     .iter()
     .map(|(key, signature_params)| {
-      let signature: &Vec<u8> = signatures.get(key).unwrap();
-      SignatureTuple {
+      let signature = match signatures.get(key).unwrap() {
+        sfv::ListEntry::Item(sfv::Item { bare_item: v, params: _ }) => {
+          v.as_byte_seq().ok_or(anyhow!("invalid signature format"))?
+        }
+        _ => bail!("invalid signature format"),
+      };
+      let signature_params = HttpSignatureParams::try_from(signature_params)?;
+      Ok(SignatureTuple {
         name: key.to_string(),
         signature_params: signature_params.clone(),
         signature: signature.clone(),
-      }
+      }) as Result<SignatureTuple, anyhow::Error>
     })
-    .collect::<Vec<_>>();
+    .collect::<Result<Vec<_>, _>>()?;
 
   Ok(tuples)
 }
@@ -204,18 +183,13 @@ fn build_signature_base_from_request<B>(
     .covered_components
     .iter()
     .map(|component_id| extract_http_message_component_from_request(req, component_id))
-    .collect::<Vec<_>>();
-  ensure!(component_lines.iter().all(|c| c.is_ok()), "Failed to extract component lines");
-  let component_lines = component_lines.into_iter().map(|c| c.unwrap()).collect::<Vec<_>>();
+    .collect::<Result<Vec<_>, _>>()?;
 
   HttpSignatureBase::try_new(&component_lines, signature_params)
 }
 
 /// Extract http field from hyper http request
-fn extract_http_field_from_request<B>(
-  req: &Request<B>,
-  id: &HttpMessageComponentId,
-) -> Result<HttpMessageComponent, anyhow::Error> {
+fn extract_http_field_from_request<B>(req: &Request<B>, id: &HttpMessageComponentId) -> anyhow::Result<HttpMessageComponent> {
   let HttpMessageComponentName::HttpField(header_name) = &id.name else {
     bail!("invalid http message component name as http field");
   };
@@ -228,10 +202,8 @@ fn extract_http_field_from_request<B>(
     .headers()
     .get_all(header_name)
     .iter()
-    .map(|v| v.to_str().map_err(|e| anyhow::anyhow!("{e}")))
-    .collect::<Vec<_>>();
-  ensure!(field_values.iter().all(|v| v.is_ok()), "Failed to extract field values");
-  let field_values = field_values.into_iter().map(|v| v.unwrap().to_owned()).collect::<Vec<_>>();
+    .map(|v| v.to_str().map(|s| s.to_owned()).map_err(|e| anyhow::anyhow!("{e}")))
+    .collect::<Result<Vec<_>, _>>()?;
 
   HttpMessageComponent::try_from((id, field_values.as_slice()))
 }

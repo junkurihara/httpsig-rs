@@ -4,9 +4,10 @@ use crate::{
   trace::*,
   util::has_unique_elements,
 };
-use anyhow::{bail, ensure};
+use anyhow::ensure;
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
+use sfv::{ListEntry, Parser, SerializeValue};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_DURATION: u64 = 300;
@@ -139,31 +140,28 @@ impl std::fmt::Display for HttpSignatureParams {
   }
 }
 
-impl TryFrom<&str> for HttpSignatureParams {
+impl TryFrom<&ListEntry> for HttpSignatureParams {
   type Error = anyhow::Error;
-  fn try_from(value: &str) -> anyhow::Result<Self> {
-    // first extract string inside `()`
-    if !(value.starts_with('(') && value.contains(')')) {
-      bail!("Invalid message components: {}", value);
-    }
-    let (inner_list, input_param) = value[1..].split_once(')').map(|(k, v)| (k.trim(), v.trim())).unwrap();
-    let covered_components = inner_list
-      .split(' ')
-      .filter(|v| !v.is_empty())
-      .map(HttpMessageComponentId::try_from)
-      .collect::<Vec<_>>();
+  /// Convert from ListEntry to HttpSignatureParams
+  fn try_from(value: &ListEntry) -> anyhow::Result<Self> {
+    ensure!(matches!(value, ListEntry::InnerList(_)), "Invalid signature params");
+    let inner_list_with_params = match value {
+      ListEntry::InnerList(v) => v,
+      _ => unreachable!(),
+    };
+    let covered_components = inner_list_with_params
+      .items
+      .iter()
+      .map(|v| {
+        v.serialize_value()
+          .map_err(|e| anyhow::anyhow!("{e}"))
+          .and_then(|v| HttpMessageComponentId::try_from(v.as_str()))
+      })
+      .collect::<Result<Vec<_>, _>>()?;
     ensure!(
-      covered_components.iter().all(|v| v.is_ok()),
-      "Invalid message component ids: {value}"
+      has_unique_elements(covered_components.iter()),
+      "duplicate covered component ids"
     );
-    ensure!(
-      has_unique_elements(covered_components.iter().map(|v| v.as_ref().unwrap())),
-      "duplicate covered component ids: {value}"
-    );
-    let covered_components = covered_components
-      .into_iter()
-      .map(|v| v.unwrap())
-      .collect::<Vec<HttpMessageComponentId>>();
 
     let mut params = Self {
       created: None,
@@ -175,30 +173,32 @@ impl TryFrom<&str> for HttpSignatureParams {
       covered_components,
     };
 
-    // then extract signature parameters
-    if !input_param.is_empty() {
-      if !input_param.starts_with(';') {
-        anyhow::bail!("Invalid signature parameter: {}", input_param);
-      };
-      input_param[1..].split(';').for_each(|param| {
-        let mut param_iter = param.split('=');
-        let key = param_iter.next().unwrap();
-        let value = param_iter.next().unwrap();
-        match key {
-          "created" => params.created = Some(value.parse::<u64>().unwrap()),
-          "expires" => params.expires = Some(value.parse::<u64>().unwrap()),
-          "nonce" => params.nonce = Some(value[1..value.len() - 1].to_string()),
-          "alg" => params.alg = Some(value[1..value.len() - 1].to_string()),
-          "keyid" => params.keyid = Some(value[1..value.len() - 1].to_string()),
-          "tag" => params.tag = Some(value[1..value.len() - 1].to_string()),
-          _ => {
-            error!("Ignore invalid signature parameter: {}", key)
-          }
+    inner_list_with_params
+      .params
+      .iter()
+      .for_each(|(key, bare_item)| match key.as_str() {
+        "created" => params.created = bare_item.as_int().map(|v| v as u64),
+        "expires" => params.expires = bare_item.as_int().map(|v| v as u64),
+        "nonce" => params.nonce = bare_item.as_str().map(|v| v.to_string()),
+        "alg" => params.alg = bare_item.as_str().map(|v| v.to_string()),
+        "keyid" => params.keyid = bare_item.as_str().map(|v| v.to_string()),
+        "tag" => params.tag = bare_item.as_str().map(|v| v.to_string()),
+        _ => {
+          error!("Ignore invalid signature parameter: {}", key)
         }
       });
-    };
-
     Ok(params)
+  }
+}
+
+impl TryFrom<&str> for HttpSignatureParams {
+  type Error = anyhow::Error;
+  /// Convert from string to HttpSignatureParams
+  fn try_from(value: &str) -> anyhow::Result<Self> {
+    let sfv_parsed = Parser::parse_list(value.as_bytes()).map_err(|e| anyhow::anyhow!("{e}"))?;
+    ensure!(sfv_parsed.len() == 1, "Invalid signature params");
+    ensure!(matches!(sfv_parsed[0], ListEntry::InnerList(_)), "Invalid signature params");
+    HttpSignatureParams::try_from(&sfv_parsed[0])
   }
 }
 

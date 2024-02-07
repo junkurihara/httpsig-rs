@@ -1,9 +1,8 @@
-use anyhow::{bail, ensure};
-
 use super::{
   component_name::{DerivedComponentName, HttpMessageComponentName},
   component_param::{HttpMessageComponentParam, HttpMessageComponentParams},
 };
+use anyhow::{bail, ensure};
 
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
