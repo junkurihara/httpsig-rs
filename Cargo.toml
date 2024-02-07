@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["lib", "ext-hyper"]
+members = ["httpsig", "httpsig-hyper"]
 resolver = "2"
 
 [profile.release]
