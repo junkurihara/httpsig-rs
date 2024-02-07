@@ -1,5 +1,6 @@
 use anyhow::{bail, ensure};
 use rustc_hash::FxHashSet as HashSet;
+use super::parse::{build_derived_component, build_http_field_component};
 
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone)]
@@ -11,11 +12,12 @@ pub struct HttpMessageComponent {
   pub value: HttpMessageComponentValue,
 }
 
-impl HttpMessageComponent {
-  /// Create HttpMessageComponent from serialized string, i.e., `"<id>": <value>` in the signature input
-  pub fn from_serialized_str(serialized_str: &str) -> std::result::Result<Self, anyhow::Error> {
-    let Some((id, value)) = serialized_str.split_once(':') else {
-      bail!("Invalid http message component: {}", serialized_str);
+impl TryFrom<&str> for HttpMessageComponent {
+  type Error = anyhow::Error;
+  /// Create HttpMessageComponent from serialized string, i.e., `"<id>": <value>` of lines in the signature base of HTTP header.
+  fn try_from(val: &str) -> Result<Self, Self::Error> {
+    let Some((id, value)) = val.split_once(':') else {
+      bail!("Invalid http message component: {}", val);
     };
     let id = id.trim();
     ensure_component_id(id)?;
@@ -25,29 +27,18 @@ impl HttpMessageComponent {
       value: HttpMessageComponentValue::from(value.trim()),
     })
   }
+}
 
-  //Create an iterator of HttpMessageComponent from for a given http component id
-  // pub(crate) fn from_name_and_values(name: &str, values: impl Iterator<Item = String>) -> Vec<Self> {
-  //   let name = HttpMessageComponentName::from(name);
-  //   let iter = values
-  //     .map(move |v| {
-  //       // let params = match name {
-  //       //   HttpMessageComponentName::HttpField(_) => HttpMessageComponentParams::from(""),
-  //       //   HttpMessageComponentName::Derived(DerivedComponentName::QueryParam) => {
-  //       //     HttpMessageComponentParams::from(format!("name=\"{}\"", v))
-  //       //   }
-  //       //   _ => HttpMessageComponentParams::from(""),
-  //       // };
-  //       let res = Self {
-  //         name: name.clone(),
-  //         params: HttpMessageComponentParams(HashSet::default()),
-  //         value: HttpMessageComponentValue::from(v.as_ref()),
-  //       };
-  //       res
-  //     })
-  //     .collect::<Vec<_>>();
-  //   iter
-  // }
+impl TryFrom<(&HttpMessageComponentId, &[String])> for HttpMessageComponent {
+    type Error = anyhow::Error;
+
+    /// Build http message component from given id and its associated field values
+    fn try_from((id, field_values): (&HttpMessageComponentId, &[String])) -> Result<Self, Self::Error> {
+      match &id.name {
+        HttpMessageComponentName::HttpField(_) => build_http_field_component(id, field_values),
+        HttpMessageComponentName::Derived(_) => build_derived_component(id, field_values),
+      }
+    }
 }
 
 fn ensure_component_id(id: &str) -> anyhow::Result<()> {
@@ -411,7 +402,7 @@ mod tests {
       ("\"@status\"", "200", DerivedComponentName::Status),
     ];
     for (id, value, name) in tuples {
-      let comp = HttpMessageComponent::from_serialized_str(format!("{}: {}", id, value).as_ref()).unwrap();
+      let comp = HttpMessageComponent::try_from(format!("{}: {}", id, value).as_ref()).unwrap();
       assert_eq!(comp.id.name, HttpMessageComponentName::Derived(name));
       if !id.contains(';') {
         assert_eq!(comp.id.params.0, HashSet::default());
@@ -428,7 +419,7 @@ mod tests {
   #[test]
   fn test_from_serialized_string_derived_query_params() {
     let (id, value, name) = ("\"@query-param\";name=\"key\"", "\"value\"", DerivedComponentName::QueryParam);
-    let comp = HttpMessageComponent::from_serialized_str(format!("{}: {}", id, value).as_ref()).unwrap();
+    let comp = HttpMessageComponent::try_from(format!("{}: {}", id, value).as_ref()).unwrap();
     assert_eq!(comp.id.name, HttpMessageComponentName::Derived(name));
     assert_eq!(
       comp.id.params.0.get(&HttpMessageComponentParam::Name("key".to_string())),
@@ -449,7 +440,7 @@ mod tests {
       ("\"x-empty-header\"", "", "x-empty-header"),
     ];
     for (id, value, inner_name) in tuples {
-      let comp = HttpMessageComponent::from_serialized_str(format!("{}: {}", id, value).as_ref()).unwrap();
+      let comp = HttpMessageComponent::try_from(format!("{}: {}", id, value).as_ref()).unwrap();
       assert_eq!(comp.id.name, HttpMessageComponentName::HttpField(inner_name.to_string()));
       if !id.contains(';') {
         assert_eq!(comp.id.params.0, HashSet::default());
@@ -463,7 +454,7 @@ mod tests {
 
   #[test]
   fn test_from_serialized_string_http_field_params() {
-    let comp = HttpMessageComponent::from_serialized_str("\"example-header\";bs;tr: example-value").unwrap();
+    let comp = HttpMessageComponent::try_from("\"example-header\";bs;tr: example-value").unwrap();
     assert_eq!(
       comp.id.name,
       HttpMessageComponentName::HttpField("example-header".to_string())
@@ -478,7 +469,7 @@ mod tests {
 
   #[test]
   fn test_from_serialized_string_http_field_params_key() {
-    let comp = HttpMessageComponent::from_serialized_str("\"example-header\";key=\"hoge\": example-value").unwrap();
+    let comp = HttpMessageComponent::try_from("\"example-header\";key=\"hoge\": example-value").unwrap();
     assert_eq!(
       comp.id.name,
       HttpMessageComponentName::HttpField("example-header".to_string())
@@ -495,11 +486,11 @@ mod tests {
   fn test_field_params_derived_component() {
     // params check
     // only req field param is allowed
-    let comp = HttpMessageComponent::from_serialized_str("\"@method\";req: POST");
+    let comp = HttpMessageComponent::try_from("\"@method\";req: POST");
     assert!(comp.is_ok());
-    let comp = HttpMessageComponent::from_serialized_str("\"@method\";bs: POST");
+    let comp = HttpMessageComponent::try_from("\"@method\";bs: POST");
     assert!(comp.is_err());
-    let comp = HttpMessageComponent::from_serialized_str("\"@method\";key=\"hoge\": POST");
+    let comp = HttpMessageComponent::try_from("\"@method\";key=\"hoge\": POST");
     assert!(comp.is_err());
   }
 }

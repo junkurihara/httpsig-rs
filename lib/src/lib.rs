@@ -8,7 +8,7 @@ mod util;
 pub mod prelude {
   pub mod message_component {
     pub use crate::message_component::{
-      build_http_message_component, DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
+      DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
       HttpMessageComponentParam,
     };
   }

@@ -67,10 +67,10 @@ mod test {
     let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 
     let component_lines = vec![
-      HttpMessageComponent::from_serialized_str("\"@method\": GET").unwrap(),
-      HttpMessageComponent::from_serialized_str("\"@path\": /").unwrap(),
-      HttpMessageComponent::from_serialized_str("\"date\": Tue, 07 Jun 2014 20:51:35 GMT").unwrap(),
-      HttpMessageComponent::from_serialized_str("\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:")
+      HttpMessageComponent::try_from("\"@method\": GET").unwrap(),
+      HttpMessageComponent::try_from("\"@path\": /").unwrap(),
+      HttpMessageComponent::try_from("\"date\": Tue, 07 Jun 2014 20:51:35 GMT").unwrap(),
+      HttpMessageComponent::try_from("\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:")
         .unwrap(),
     ];
     let signature_base = HttpSignatureBase::try_new(&component_lines, &signature_params).unwrap();

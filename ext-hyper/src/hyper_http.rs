@@ -5,7 +5,7 @@ use http::Request;
 use http_body::Body;
 use httpsig::prelude::{
   message_component::{
-    build_http_message_component, DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
+    DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName,
     HttpMessageComponentParam,
   },
   HttpSignatureBase, HttpSignatureParams, SigningKey, VerifyingKey,
@@ -233,7 +233,7 @@ fn extract_http_field_from_request<B>(
   ensure!(field_values.iter().all(|v| v.is_ok()), "Failed to extract field values");
   let field_values = field_values.into_iter().map(|v| v.unwrap().to_owned()).collect::<Vec<_>>();
 
-  build_http_message_component(id, &field_values)
+  HttpMessageComponent::try_from((id, field_values.as_slice()))
 }
 
 /// Extract derived component from hyper http request
@@ -284,7 +284,7 @@ fn extract_derived_component_from_request<B>(
       .collect::<Vec<_>>(),
   };
 
-  build_http_message_component(id, &field_values)
+  HttpMessageComponent::try_from((id, field_values.as_slice()))
 }
 
 /* --------------------------------------- */

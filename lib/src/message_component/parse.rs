@@ -5,19 +5,9 @@ use crate::trace::*;
 use anyhow::{bail, ensure};
 use sfv::{Parser, SerializeValue};
 
-/// Build http message component from given id and its associated field values
-pub fn build_http_message_component(
-  id: &HttpMessageComponentId,
-  field_values: &[String],
-) -> anyhow::Result<HttpMessageComponent> {
-  match &id.name {
-    super::HttpMessageComponentName::HttpField(_) => build_http_field_component(id, field_values),
-    super::HttpMessageComponentName::Derived(_) => build_derived_component(id, field_values),
-  }
-}
 
 /// Build derived component from given id and its associated field values
-fn build_derived_component(id: &HttpMessageComponentId, field_values: &[String]) -> anyhow::Result<HttpMessageComponent> {
+pub(super) fn build_derived_component(id: &HttpMessageComponentId, field_values: &[String]) -> anyhow::Result<HttpMessageComponent> {
   let HttpMessageComponentName::Derived(derived_id) = &id.name else {
     bail!("invalid http message component name as derived component");
   };
@@ -70,7 +60,7 @@ fn build_derived_component(id: &HttpMessageComponentId, field_values: &[String])
 
 /// Build http field component from given id and its associated field values
 /// NOTE: field_value must be ones of request for `req` param
-fn build_http_field_component(id: &HttpMessageComponentId, field_values: &[String]) -> anyhow::Result<HttpMessageComponent> {
+pub(super) fn build_http_field_component(id: &HttpMessageComponentId, field_values: &[String]) -> anyhow::Result<HttpMessageComponent> {
   let mut field_values = field_values.to_vec();
   let params = &id.params;
 
