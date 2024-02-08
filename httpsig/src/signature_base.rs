@@ -54,8 +54,6 @@ impl HttpSignatureHeaders {
       .iter()
       .map(|(k, v)| {
         let signature_name = k.to_string();
-        // let list = vec![v.to_owned()] as sfv::List;
-        // let signature_input = list.serialize_value().map_err(|e| anyhow!(e))?;
         let signature_input = HttpSignatureInput(HttpSignatureParams::try_from(v)?);
 
         let signature_bytes = match signature.get(k) {
@@ -74,6 +72,7 @@ impl HttpSignatureHeaders {
         }) as anyhow::Result<Self>
       })
       .collect::<Result<Vec<_>, _>>()?;
+    // TODO: TODO: TODO: TODO: IndexMapにすべきか？
     Ok(res)
   }
 
@@ -98,6 +97,11 @@ impl std::fmt::Display for HttpSignature {
 
 #[derive(Debug, Clone)]
 pub struct HttpSignatureInput(HttpSignatureParams);
+impl HttpSignatureInput {
+  pub fn as_signature_params(&self) -> &HttpSignatureParams {
+    &self.0
+  }
+}
 impl std::fmt::Display for HttpSignatureInput {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.0)

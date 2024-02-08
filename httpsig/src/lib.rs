@@ -92,4 +92,20 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
     let verification_result = pk.verify(&signature_base.as_bytes(), &signature_bytes);
     assert!(verification_result.is_ok());
   }
+
+  #[test]
+  fn test_with_build_signature_api() {
+    let signature_params = HttpSignatureParams::try_from(SIGNATURE_PARAMS).unwrap();
+    let component_lines = COMPONENT_LINES
+      .iter()
+      .map(|&line| message_component::HttpMessageComponent::try_from(line).unwrap())
+      .collect::<Vec<_>>();
+
+    let signature_base = HttpSignatureBase::try_new(&component_lines, &signature_params).unwrap();
+    let sk = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let signature_headers = signature_base.build_signature_headers(&sk, Some("sig-b26")).unwrap();
+
+    // let signature_params_string = signature_headers.signature_input().as_
+    // let pk = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+  }
 }
