@@ -14,7 +14,7 @@ pub mod prelude {
 
   pub use crate::{
     crypto::{PublicKey, SecretKey, SharedKey, SigningKey, VerifyingKey},
-    signature_base::HttpSignatureBase,
+    signature_base::{HttpSignatureBase, HttpSignatureHeaders},
     signature_params::HttpSignatureParams,
   };
 }
