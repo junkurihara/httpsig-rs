@@ -1,11 +1,13 @@
-use crate::{crypto::SigningKey, message_component::HttpMessageComponent, signature_params::HttpSignatureParams};
+use crate::{
+  crypto::SigningKey, message_component::HttpMessageComponent, prelude::VerifyingKey, signature_params::HttpSignatureParams,
+};
 use anyhow::{anyhow, ensure};
 use base64::{engine::general_purpose, Engine as _};
 use fxhash::FxBuildHasher;
 use indexmap::IndexMap;
 use sfv::{BareItem, Item, ListEntry, Parser};
 
-// type HttpSignatureHeadersMap = IndexMap<String, HttpSignatureHeaders, FxBuildHasher>;
+type HttpSignatureHeadersMap = IndexMap<String, HttpSignatureHeaders, FxBuildHasher>;
 
 /// Default signature name used to indicate signature in http header (`signature` and `signature-input`)
 const DEFAULT_SIGNATURE_NAME: &str = "sig";
@@ -17,13 +19,13 @@ pub struct HttpSignatureHeaders {
   signature_name: String,
   /// Signature value of "Signature" http header in the form of "<signature_name>=:<base64_signature>:"
   signature: HttpSignature,
-  /// Signature Input value of "Signature-Input" http header in the form of "<signature_name>=:<signature_params>:"
-  signature_input: HttpSignatureInput,
+  /// signature-params value of "Signature-Input" http header in the form of "<signature_name>=:<signature_params>:"
+  signature_params: HttpSignatureParams,
 }
 
 impl HttpSignatureHeaders {
   /// Generates (possibly multiple) HttpSignatureHeaders from signature and signature-input header values
-  pub fn try_from(signature_header: &str, signature_input_header: &str) -> anyhow::Result<Vec<Self>> {
+  pub fn try_parse(signature_header: &str, signature_input_header: &str) -> anyhow::Result<HttpSignatureHeadersMap> {
     let signature_input = Parser::parse_dictionary(signature_input_header.as_bytes()).map_err(|e| anyhow!(e))?;
     let signature = Parser::parse_dictionary(signature_header.as_bytes()).map_err(|e| anyhow!(e))?;
 
@@ -54,7 +56,7 @@ impl HttpSignatureHeaders {
       .iter()
       .map(|(k, v)| {
         let signature_name = k.to_string();
-        let signature_input = HttpSignatureInput(HttpSignatureParams::try_from(v)?);
+        let signature_params = HttpSignatureParams::try_from(v)?;
 
         let signature_bytes = match signature.get(k) {
           Some(ListEntry::Item(Item {
@@ -65,24 +67,42 @@ impl HttpSignatureHeaders {
         };
         let signature = HttpSignature(signature_bytes.to_vec());
 
-        Ok(Self {
-          signature_name,
-          signature,
-          signature_input,
-        }) as anyhow::Result<Self>
+        Ok((
+          signature_name.clone(),
+          Self {
+            signature_name,
+            signature,
+            signature_params,
+          },
+        )) as anyhow::Result<(String, Self)>
       })
-      .collect::<Result<Vec<_>, _>>()?;
+      .collect::<Result<HttpSignatureHeadersMap, _>>()?;
     // TODO: TODO: TODO: TODO: IndexMapにすべきか？
     Ok(res)
   }
 
+  /// Returns the signature name
+  pub fn signature_name(&self) -> &str {
+    &self.signature_name
+  }
+
+  /// Returns the signature value without name
+  pub fn signature(&self) -> &HttpSignature {
+    &self.signature
+  }
+
+  /// Returns the signature params value without name for signature-input header
+  pub fn signature_params(&self) -> &HttpSignatureParams {
+    &self.signature_params
+  }
+
   /// Returns the signature value of "Signature" http header in the form of "<signature_name>=:<base64_signature>:"
-  pub fn signature(&self) -> String {
+  pub fn signature_header_value(&self) -> String {
     format!("{}=:{}:", self.signature_name, self.signature)
   }
   /// Returns the signature input value of "Signature-Input" http header in the form of "<signature_name>=<signature_params>"
-  pub fn signature_input(&self) -> String {
-    format!("{}={}", self.signature_name, self.signature_input)
+  pub fn signature_input_header_value(&self) -> String {
+    format!("{}={}", self.signature_name, self.signature_params)
   }
 }
 
@@ -92,19 +112,6 @@ impl std::fmt::Display for HttpSignature {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let signature_value = general_purpose::STANDARD.encode(&self.0);
     write!(f, "{}", signature_value)
-  }
-}
-
-#[derive(Debug, Clone)]
-pub struct HttpSignatureInput(HttpSignatureParams);
-impl HttpSignatureInput {
-  pub fn as_signature_params(&self) -> &HttpSignatureParams {
-    &self.0
-  }
-}
-impl std::fmt::Display for HttpSignatureInput {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.0)
   }
 }
 
@@ -122,7 +129,7 @@ impl HttpSignatureBase {
   /// This should not be exposed to user and not used directly.
   /// Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
   /// When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
-  pub fn try_new(component_lines: &Vec<HttpMessageComponent>, signature_params: &HttpSignatureParams) -> anyhow::Result<Self> {
+  pub fn try_new(component_lines: &[HttpMessageComponent], signature_params: &HttpSignatureParams) -> anyhow::Result<Self> {
     // check if the order of component lines is the same as the order of covered message component ids
     if component_lines.len() != signature_params.covered_components.len() {
       anyhow::bail!("The number of component lines is not the same as the number of covered message component ids");
@@ -137,7 +144,7 @@ impl HttpSignatureBase {
     }
 
     Ok(Self {
-      component_lines: component_lines.clone(),
+      component_lines: component_lines.to_vec(),
       signature_params: signature_params.clone(),
     })
   }
@@ -154,7 +161,7 @@ impl HttpSignatureBase {
     signing_key.sign(&bytes)
   }
 
-  /// Build the signature value of "Signature" http header in the form of "<signature_name>=:<base64_signature>:"
+  /// Build the signature and signature-input headers structs
   pub fn build_signature_headers(
     &self,
     signing_key: &impl SigningKey,
@@ -164,8 +171,18 @@ impl HttpSignatureBase {
     Ok(HttpSignatureHeaders {
       signature_name: signature_name.unwrap_or(DEFAULT_SIGNATURE_NAME).to_string(),
       signature: HttpSignature(signature),
-      signature_input: HttpSignatureInput(self.signature_params.clone()),
+      signature_params: self.signature_params.clone(),
     })
+  }
+
+  /// Verify the signature using the given verifying key
+  pub fn verify_signature_headers(
+    &self,
+    verifying_key: &impl VerifyingKey,
+    signature_headers: &HttpSignatureHeaders,
+  ) -> anyhow::Result<()> {
+    let signature_bytes = signature_headers.signature.0.as_slice();
+    verifying_key.verify(&self.as_bytes(), signature_bytes)
   }
 }
 
@@ -193,7 +210,6 @@ mod test {
     r##""content-digest": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"##,
   ];
 
-  /// BuilderかSignerか何かでSignatureParamsを、verify時はreqか、sign時は内部に持つ生成フラグから内部的に生成できるようにする。
   /// こんな感じでSignatureBaseをParamsとかComponentLinesから直接作るのは避ける。
   #[test]
   fn test_signature_base_directly_instantiated() {
@@ -220,13 +236,19 @@ mod test {
 
   #[test]
   fn test_signature_values() {
-    const SIGNATURE_INPUT: &str = r##"sig-b26=("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
-    const SIGNATURE: &str =
-      r##"sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:"##;
+    const SIGNATURE_INPUT: &str = r##"sig-b26=("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519", sig-b27=("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519-alt""##;
+    const SIGNATURE: &str = r##"sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:, sig-b27=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:"##;
 
-    let http_signature_headers = HttpSignatureHeaders::try_from(SIGNATURE, SIGNATURE_INPUT).unwrap();
-    assert!(http_signature_headers.len() == 1);
-    assert_eq!(http_signature_headers[0].signature().as_str(), SIGNATURE);
-    assert_eq!(http_signature_headers[0].signature_input().as_str(), SIGNATURE_INPUT);
+    let header_map = HttpSignatureHeaders::try_parse(SIGNATURE, SIGNATURE_INPUT).unwrap();
+    assert!(header_map.len() == 2);
+    let http_signature_headers = header_map.get("sig-b26").unwrap();
+    assert_eq!(
+      http_signature_headers.signature_header_value(),
+      SIGNATURE.split(',').next().unwrap()
+    );
+    assert_eq!(
+      http_signature_headers.signature_input_header_value(),
+      SIGNATURE_INPUT.split(',').next().unwrap()
+    );
   }
 }

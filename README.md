@@ -14,7 +14,7 @@ This crates provides a basic library [httpsig](./httpsig) and [its extension](./
 ## Usage of Extension for hyper (httpsig-hyper)
 
 ```rust:
-use httpsig_hyper::{prelude::{message_component::*, *}, *};
+use httpsig_hyper::{prelude::*, *};
 
 const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
@@ -44,7 +44,7 @@ async fn set_and_verify() {
   // build signature params that indicates objects to be signed
   let covered_components = COVERED_COMPONENTS
       .iter()
-      .map(|v| HttpMessageComponentId::try_from(*v))
+      .map(|v| message_component::HttpMessageComponentId::try_from(*v))
       .collect::<Result<Vec<_>, _>>()
       .unwrap();
   let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();

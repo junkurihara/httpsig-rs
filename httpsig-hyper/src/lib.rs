@@ -25,12 +25,10 @@ pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest};
 pub use hyper_http::RequestMessageSignature;
 
+/* ----------------------------------------------------------------- */
 #[cfg(test)]
 mod tests {
-  use super::{
-    prelude::{message_component::*, *},
-    *,
-  };
+  use super::{prelude::*, *};
   use http::Request;
   use http_body_util::Full;
   use httpsig::prelude::{PublicKey, SecretKey};
@@ -76,7 +74,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     let covered_components = COVERED_COMPONENTS
       .iter()
-      .map(|v| HttpMessageComponentId::try_from(*v))
+      .map(|v| message_component::HttpMessageComponentId::try_from(*v))
       .collect::<Result<Vec<_>, _>>()
       .unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();

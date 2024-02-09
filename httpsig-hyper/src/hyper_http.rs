@@ -1,20 +1,16 @@
 use anyhow::{anyhow, bail, ensure};
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
 use http::Request;
 use http_body::Body;
 use httpsig::prelude::{
   message_component::{
     DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName, HttpMessageComponentParam,
   },
-  HttpSignatureBase, HttpSignatureParams, SigningKey, VerifyingKey,
+  HttpSignatureBase, HttpSignatureHeaders, HttpSignatureParams, SigningKey, VerifyingKey,
 };
 use sfv::Parser;
 
 type IndexMap<K, V> = indexmap::IndexMap<K, V, fxhash::FxBuildHasher>;
-
-/// Default signature name used to indicate signature in http header (`signature` and `signature-input`)
-const DEFAULT_SIGNATURE_NAME: &str = "sig";
 
 /* --------------------------------------- */
 #[async_trait]
@@ -61,17 +57,15 @@ where
     Self: Sized,
     T: SigningKey + Sync,
   {
-    let signature_base = build_signature_base_from_request(self, signature_params)?.as_bytes();
-    let signature = signing_key.sign(&signature_base)?;
-    let base64_signature = general_purpose::STANDARD.encode(signature);
-    let signature_name = signature_name.unwrap_or(DEFAULT_SIGNATURE_NAME);
+    let signature_base = build_signature_base_from_request(self, signature_params)?;
+    let signature_headers = signature_base.build_signature_headers(signing_key, signature_name)?;
 
-    let signature_input_header_value = format!("{signature_name}={signature_params}");
-    let signature_header_value = format!("{signature_name}=:{base64_signature}:");
     self
       .headers_mut()
-      .append("signature-input", signature_input_header_value.parse()?);
-    self.headers_mut().append("signature", signature_header_value.parse()?);
+      .append("signature-input", signature_headers.signature_input_header_value().parse()?);
+    self
+      .headers_mut()
+      .append("signature", signature_headers.signature_header_value().parse()?);
 
     Ok(())
   }
@@ -129,6 +123,25 @@ struct SignatureTuple {
 /// Extract signature and signature-input with signature-name indication from http request
 fn extract_name_param_signature_tuple_from_request<B>(req: &Request<B>) -> anyhow::Result<Vec<SignatureTuple>> {
   ensure!(req.headers().contains_key("signature-input") && req.headers().contains_key("signature"));
+
+  let signature_input_strings = req
+    .headers()
+    .get_all("signature-input")
+    .iter()
+    .map(|v| v.to_str())
+    .collect::<Result<Vec<_>, _>>()?
+    .join(", ");
+  let signature_strings = req
+    .headers()
+    .get_all("signature")
+    .iter()
+    .map(|v| v.to_str())
+    .collect::<Result<Vec<_>, _>>()?
+    .join(", ");
+
+  let signature_headers = HttpSignatureHeaders::try_parse(&signature_strings, &signature_input_strings)?;
+  println!("{:?}", signature_headers);
+
   let signature_inputs = req
     .headers()
     .get_all("signature-input")

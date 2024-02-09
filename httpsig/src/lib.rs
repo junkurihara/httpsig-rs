@@ -14,13 +14,15 @@ pub mod prelude {
 
   pub use crate::{
     crypto::{PublicKey, SecretKey, SharedKey, SigningKey, VerifyingKey},
-    signature_base::{HttpSignatureBase, HttpSignatureHeaders},
+    signature_base::{HttpSignature, HttpSignatureBase, HttpSignatureHeaders},
     signature_params::HttpSignatureParams,
   };
 }
 
+/* ----------------------------------------------------------------- */
 #[cfg(test)]
 mod tests {
+
   use super::prelude::*;
   use base64::{engine::general_purpose, Engine as _};
   // params from https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#name-signing-a-request-using-ed2
@@ -77,7 +79,7 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
     r##"("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519""##;
 
   #[test]
-  fn test_with_api() {
+  fn test_with_directly_using_crypto_api() {
     let signature_params = HttpSignatureParams::try_from(SIGNATURE_PARAMS).unwrap();
     let component_lines = COMPONENT_LINES
       .iter()
@@ -95,17 +97,29 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1\
 
   #[test]
   fn test_with_build_signature_api() {
-    let signature_params = HttpSignatureParams::try_from(SIGNATURE_PARAMS).unwrap();
     let component_lines = COMPONENT_LINES
       .iter()
       .map(|&line| message_component::HttpMessageComponent::try_from(line).unwrap())
       .collect::<Vec<_>>();
 
+    // sender
+    let signature_params = HttpSignatureParams::try_from(SIGNATURE_PARAMS).unwrap();
     let signature_base = HttpSignatureBase::try_new(&component_lines, &signature_params).unwrap();
     let sk = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
     let signature_headers = signature_base.build_signature_headers(&sk, Some("sig-b26")).unwrap();
+    let signature_params_header_string = signature_headers.signature_input_header_value();
+    let signature_header_string = signature_headers.signature_header_value();
 
-    // let signature_params_string = signature_headers.signature_input().as_
-    // let pk = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    assert_eq!(signature_params_header_string, format!("sig-b26={}", SIGNATURE_PARAMS));
+    assert!(signature_header_string.starts_with("sig-b26=:") && signature_header_string.ends_with(':'));
+
+    // receiver
+    let header_map = HttpSignatureHeaders::try_parse(&signature_header_string, &signature_params_header_string).unwrap();
+    let received_signature_headers = header_map.get("sig-b26").unwrap();
+    let received_signature_base =
+      HttpSignatureBase::try_new(&component_lines, received_signature_headers.signature_params()).unwrap();
+    let pk = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_result = received_signature_base.verify_signature_headers(&pk, received_signature_headers);
+    assert!(verification_result.is_ok());
   }
 }
