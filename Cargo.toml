@@ -5,7 +5,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/httpsig-rs"
 repository = "https://github.com/junkurihara/httpsig-rs"
