@@ -1,13 +1,13 @@
 [package]
 name = "httpsig"
-version = "0.0.2"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Implementation of IETF draft of http message signatures"
-authors = ["Jun Kurihara"]
-homepage = "https://github.com/junkurihara/httpsig-rs"
-repository = "https://github.com/junkurihara/httpsig-rs"
-license = "MIT"
-readme = "../README.md"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
