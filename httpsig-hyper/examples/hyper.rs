@@ -51,7 +51,7 @@ async fn sender() -> Request<Full<bytes::Bytes>> {
 }
 
 /// Receiver function that verifies a request with a signature
-async fn receiver(req: Request<Full<bytes::Bytes>>) -> bool {
+async fn receiver(req: &Request<Full<bytes::Bytes>>) -> bool {
   let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
   let key_id = public_key.key_id();
 
@@ -75,6 +75,10 @@ async fn main() {
   assert!(signature.starts_with(r##"custom_sig_name=:"##));
 
   // receiver verifies the request with a signature
-  let verification_res = receiver(request_from_sender).await;
+  let verification_res = receiver(&request_from_sender).await;
   assert!(verification_res);
+
+  // if needed, content-digest can be verified separately
+  let verified = request_from_sender.verify_content_digest().await.unwrap();
+  assert!(verified);
 }

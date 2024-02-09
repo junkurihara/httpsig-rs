@@ -55,9 +55,13 @@ async fn main() {
   assert!(res.is_ok())
 
   // receiver verifies the request with a signature
-  let verification_res = receiver(request_from_sender).await;
+  let verified_message = receiver(&request_from_sender).await;
   assert!(verification_res.is_ok());
   assert!(verification_res.unwrap())
+
+  // if needed, content-digest can be verified separately
+  let verified_cd = request_from_sender.verify_content_digest().await.unwrap();
+  assert!(verified);
 }
 
 ```

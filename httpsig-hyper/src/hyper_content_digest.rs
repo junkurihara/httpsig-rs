@@ -1,10 +1,12 @@
 use super::{ContentDigestType, CONTENT_DIGEST_HEADER};
+use anyhow::ensure;
 use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine as _};
 use bytes::{Buf, Bytes};
 use http::{Request, Response};
 use http_body::Body;
 use http_body_util::{BodyExt, Full};
+use sfv::FromStr;
 use sha2::Digest;
 
 // hyper's http specific extension to generate and verify http signature
@@ -45,6 +47,30 @@ pub trait ContentDigest: http_body::Body {
 
     Ok((body_bytes, general_purpose::STANDARD.encode(digest)))
   }
+
+  /// Verifies the consistency between self and given content-digest in &[u8]
+  async fn verify_digest(self, cd_type: &ContentDigestType, _cd: &[u8]) -> std::result::Result<bool, Self::Error>
+  where
+    Self: Sized,
+    Self::Data: Send,
+  {
+    let body_bytes = self.into_bytes().await?;
+    let digest = match cd_type {
+      ContentDigestType::Sha256 => {
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&body_bytes);
+        hasher.finalize().to_vec()
+      }
+
+      ContentDigestType::Sha512 => {
+        let mut hasher = sha2::Sha512::new();
+        hasher.update(&body_bytes);
+        hasher.finalize().to_vec()
+      }
+    };
+
+    Ok(matches!(digest, _cd))
+  }
 }
 
 impl<T: ?Sized> ContentDigest for T where T: http_body::Body {}
@@ -57,6 +83,9 @@ pub trait RequestContentDigest {
   async fn set_content_digest(self, cd_type: &ContentDigestType) -> std::result::Result<Request<Full<Bytes>>, Self::Error>
   where
     Self: Sized;
+  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
+  where
+    Self: Sized;
 }
 
 #[async_trait]
@@ -64,6 +93,9 @@ pub trait RequestContentDigest {
 pub trait ResponseContentDigest {
   type Error;
   async fn set_content_digest(self, cd_type: &ContentDigestType) -> std::result::Result<Response<Full<Bytes>>, Self::Error>
+  where
+    Self: Sized;
+  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
   where
     Self: Sized;
 }
@@ -94,6 +126,19 @@ where
     let new_req = Request::from_parts(parts, new_body);
     Ok(new_req)
   }
+
+  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
+  where
+    Self: Sized,
+  {
+    let header_map = self.headers();
+    let (cd_type, cd) = extract_content_digest(header_map).await?;
+    let (_, body) = self.into_parts();
+    body
+      .verify_digest(&cd_type, &cd)
+      .await
+      .map_err(|_e| anyhow::anyhow!("Failed to verify digest"))
+  }
 }
 
 #[async_trait]
@@ -122,6 +167,48 @@ where
     let new_req = Response::from_parts(parts, new_body);
     Ok(new_req)
   }
+  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
+  where
+    Self: Sized,
+  {
+    let header_map = self.headers();
+    let (cd_type, cd) = extract_content_digest(header_map).await?;
+    let (_, body) = self.into_parts();
+    body
+      .verify_digest(&cd_type, &cd)
+      .await
+      .map_err(|_e| anyhow::anyhow!("Failed to verify digest"))
+  }
+}
+
+async fn extract_content_digest(header_map: &http::HeaderMap) -> anyhow::Result<(ContentDigestType, Vec<u8>)> {
+  let content_digest_header = header_map
+    .get(CONTENT_DIGEST_HEADER)
+    .ok_or(anyhow::anyhow!("Content-Digest header not found"))?
+    .to_str()?;
+  let indexmap = sfv::Parser::parse_dictionary(content_digest_header.as_bytes())
+    .map_err(|e| anyhow::anyhow!("Failed to parse Content-Digest header: {e}"))?;
+  ensure!(indexmap.len() == 1, "Content-Digest header should have only one value");
+  let (cd_type, cd) = indexmap.iter().next().unwrap();
+  let cd_type = ContentDigestType::from_str(cd_type).map_err(|e| anyhow::anyhow!("Invalid Content-Digest type: {e}"))?;
+  ensure!(
+    matches!(
+      cd,
+      sfv::ListEntry::Item(sfv::Item {
+        bare_item: sfv::BareItem::ByteSeq(_),
+        ..
+      })
+    ),
+    "Invalid Content-Digest value"
+  );
+  let cd = match cd {
+    sfv::ListEntry::Item(sfv::Item {
+      bare_item: sfv::BareItem::ByteSeq(cd),
+      ..
+    }) => cd,
+    _ => unreachable!(),
+  };
+  Ok((cd_type, cd.to_owned()))
 }
 
 /* --------------------------------------- */
@@ -159,6 +246,9 @@ mod tests {
     assert!(req.headers().contains_key(CONTENT_DIGEST_HEADER));
     let digest = req.headers().get(CONTENT_DIGEST_HEADER).unwrap().to_str().unwrap();
     assert_eq!(digest, format!("sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"));
+
+    let verified = req.verify_content_digest().await.unwrap();
+    assert!(verified);
   }
 
   #[tokio::test]
@@ -176,5 +266,8 @@ mod tests {
     assert!(res.headers().contains_key(CONTENT_DIGEST_HEADER));
     let digest = res.headers().get(CONTENT_DIGEST_HEADER).unwrap().to_str().unwrap();
     assert_eq!(digest, format!("sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"));
+
+    let verified = res.verify_content_digest().await.unwrap();
+    assert!(verified);
   }
 }

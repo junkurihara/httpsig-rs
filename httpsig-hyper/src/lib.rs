@@ -21,6 +21,17 @@ impl std::fmt::Display for ContentDigestType {
   }
 }
 
+impl std::str::FromStr for ContentDigestType {
+  type Err = anyhow::Error;
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    match s {
+      "sha-256" => Ok(ContentDigestType::Sha256),
+      "sha-512" => Ok(ContentDigestType::Sha512),
+      _ => Err(anyhow::anyhow!("Invalid content-digest type")),
+    }
+  }
+}
+
 pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest};
 pub use hyper_http::RequestMessageSignature;
