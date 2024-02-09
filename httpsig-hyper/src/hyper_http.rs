@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, ensure};
+use anyhow::{bail, ensure};
 use async_trait::async_trait;
 use http::Request;
 use http_body::Body;
@@ -8,7 +8,6 @@ use httpsig::prelude::{
   },
   HttpSignatureBase, HttpSignatureHeaders, HttpSignatureParams, SigningKey, VerifyingKey,
 };
-use sfv::Parser;
 
 type IndexMap<K, V> = indexmap::IndexMap<K, V, fxhash::FxBuildHasher>;
 
@@ -83,28 +82,32 @@ where
       bail!("The request does not have signature and signature-input headers");
     }
 
-    let tuples = extract_name_param_signature_tuple_from_request(self)?;
+    let signature_headers_map = extract_signature_headers_with_name(self)?;
 
     // filter by key_id if given
-    let tuples = if let Some(key_id) = key_id {
-      tuples
+    let filtered = if let Some(key_id) = key_id {
+      signature_headers_map
         .into_iter()
         .filter(|tuple| {
-          let params_keyid = tuple.signature_params.keyid.as_ref();
+          let params_keyid = tuple.1.signature_params().keyid.as_ref();
           params_keyid.is_some() && params_keyid.unwrap() == key_id
         })
-        .collect::<Vec<_>>()
+        .collect::<IndexMap<_, _>>()
     } else {
-      tuples
+      signature_headers_map
     };
-    ensure!(!tuples.is_empty(), "No signature for verification");
+    ensure!(!filtered.is_empty(), "No signature for verification");
 
-    let mut res = tuples.iter().map(|tuple| {
-      let signature_base = build_signature_base_from_request(self, &tuple.signature_params)?.as_bytes();
-      verifying_key.verify(&signature_base, &tuple.signature)
-    });
+    // check if any one of the signature headers is valid
+    let res = filtered
+      .iter()
+      .map(|(_, headers)| {
+        let signature_base = build_signature_base_from_request(self, headers.signature_params())?;
+        signature_base.verify_signature_headers(verifying_key, headers)
+      })
+      .any(|r| r.is_ok());
 
-    Ok(res.any(|r| r.is_ok()))
+    Ok(res)
   }
 
   /// Check if the request has signature and signature-input headers
@@ -121,7 +124,7 @@ struct SignatureTuple {
   signature: Vec<u8>,
 }
 /// Extract signature and signature-input with signature-name indication from http request
-fn extract_name_param_signature_tuple_from_request<B>(req: &Request<B>) -> anyhow::Result<Vec<SignatureTuple>> {
+fn extract_signature_headers_with_name<B>(req: &Request<B>) -> anyhow::Result<IndexMap<String, HttpSignatureHeaders>> {
   ensure!(req.headers().contains_key("signature-input") && req.headers().contains_key("signature"));
 
   let signature_input_strings = req
@@ -140,51 +143,7 @@ fn extract_name_param_signature_tuple_from_request<B>(req: &Request<B>) -> anyho
     .join(", ");
 
   let signature_headers = HttpSignatureHeaders::try_parse(&signature_strings, &signature_input_strings)?;
-  println!("{:?}", signature_headers);
-
-  let signature_inputs = req
-    .headers()
-    .get_all("signature-input")
-    .iter()
-    .flat_map(|v| Parser::parse_dictionary(v.as_bytes()))
-    .flatten()
-    .collect::<IndexMap<_, _>>();
-  let signatures = req
-    .headers()
-    .get_all("signature")
-    .iter()
-    .flat_map(|v| Parser::parse_dictionary(v.as_bytes()))
-    .flatten()
-    .collect::<IndexMap<_, _>>();
-
-  ensure!(
-    signature_inputs.len() == signatures.len(),
-    "signature and signature-input count mismatch"
-  );
-  ensure!(
-    signature_inputs.iter().all(|(key, _)| signatures.contains_key(key)),
-    "signature-input and signature key mismatch"
-  );
-
-  let tuples = signature_inputs
-    .iter()
-    .map(|(key, signature_params)| {
-      let signature = match signatures.get(key).unwrap() {
-        sfv::ListEntry::Item(sfv::Item { bare_item: v, params: _ }) => {
-          v.as_byte_seq().ok_or(anyhow!("invalid signature format"))?
-        }
-        _ => bail!("invalid signature format"),
-      };
-      let signature_params = HttpSignatureParams::try_from(signature_params)?;
-      Ok(SignatureTuple {
-        name: key.to_string(),
-        signature_params: signature_params.clone(),
-        signature: signature.clone(),
-      }) as Result<SignatureTuple, anyhow::Error>
-    })
-    .collect::<Result<Vec<_>, _>>()?;
-
-  Ok(tuples)
+  Ok(signature_headers)
 }
 
 /// Build signature base from hyper http request and signature params
@@ -303,6 +262,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 -----END PUBLIC KEY-----
 "##;
   // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
+  const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
   async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
@@ -318,12 +278,10 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   }
 
   fn build_covered_components() -> Vec<HttpMessageComponentId> {
-    vec![
-      HttpMessageComponentId::try_from("@method").unwrap(),
-      HttpMessageComponentId::try_from("date").unwrap(),
-      HttpMessageComponentId::try_from("content-type").unwrap(),
-      HttpMessageComponentId::try_from("content-digest").unwrap(),
-    ]
+    COVERED_COMPONENTS
+      .iter()
+      .map(|&s| HttpMessageComponentId::try_from(s).unwrap())
+      .collect()
   }
 
   #[tokio::test]
@@ -404,14 +362,13 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       ),
     );
 
-    let tuples = extract_name_param_signature_tuple_from_request(&req).unwrap();
+    let tuples = extract_signature_headers_with_name(&req).unwrap();
     assert_eq!(tuples.len(), 1);
-    assert_eq!(tuples[0].name, "sig11");
+    assert_eq!(tuples.get("sig11").unwrap().signature_name(), "sig11");
     assert_eq!(
-      tuples[0].signature_params.to_string(),
+      tuples.get("sig11").unwrap().signature_params().to_string(),
       r##"("@method" "@authority");created=1704972031"##
     );
-    assert_eq!(tuples[0].signature.len(), 64);
   }
 
   #[tokio::test]
@@ -443,9 +400,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       .await
       .unwrap();
 
-    let tuples = extract_name_param_signature_tuple_from_request(&req).unwrap();
-    assert_eq!(tuples.len(), 1);
-    assert_eq!(tuples[0].name, "custom_sig_name");
+    let signature_headers_map = extract_signature_headers_with_name(&req).unwrap();
+    assert_eq!(signature_headers_map.len(), 1);
+    assert_eq!(signature_headers_map[0].signature_name(), "custom_sig_name");
 
     let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature(&public_key, None).await.unwrap();

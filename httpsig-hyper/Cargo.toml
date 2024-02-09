@@ -1,6 +1,6 @@
 [package]
 name = "httpsig-hyper"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "Hyper extension for http message signatures"
 authors = ["Jun Kurihara"]
@@ -12,7 +12,7 @@ readme = "../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-httpsig = { path = "../httpsig", version = "0.0.1" }
+httpsig = { path = "../httpsig", version = "0.0.2" }
 
 anyhow = { version = "1.0.79" }
 tracing = { version = "0.1.40" }
@@ -32,11 +32,8 @@ http-body = { version = "1.0.0" }
 http-body-util = { version = "0.1.0" }
 bytes = { version = "1.5.0" }
 
-# for rfc8941 structured field values
-sfv = "0.9.4"
-
 [dev-dependencies]
 tokio = { version = "1.36.0", default-features = false, features = [
   "macros",
   "rt-multi-thread",
-] } # testing only?
+] } # testing only
