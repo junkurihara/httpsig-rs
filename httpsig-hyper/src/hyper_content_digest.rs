@@ -1,6 +1,5 @@
 use super::{ContentDigestType, CONTENT_DIGEST_HEADER};
 use anyhow::ensure;
-use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine as _};
 use bytes::{Buf, Bytes};
 use http::{Request, Response};
@@ -8,99 +7,104 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full};
 use sfv::FromStr;
 use sha2::Digest;
+use std::future::Future;
 
 // hyper's http specific extension to generate and verify http signature
 
 /* --------------------------------------- */
-#[async_trait]
 pub trait ContentDigest: http_body::Body {
   /// Returns the bytes object of the body
-  async fn into_bytes(self) -> std::result::Result<Bytes, Self::Error>
+  fn into_bytes(self) -> impl Future<Output = Result<Bytes, Self::Error>> + Send
   where
-    Self: Sized,
+    Self: Sized + Send,
     Self::Data: Send,
   {
-    let mut body_buf = self.collect().await?.aggregate();
-    Ok(body_buf.copy_to_bytes(body_buf.remaining()))
+    async {
+      let mut body_buf = self.collect().await?.aggregate();
+      Ok(body_buf.copy_to_bytes(body_buf.remaining()))
+    }
   }
 
   /// Returns the content digest in base64
-  async fn into_bytes_with_digest(self, cd_type: &ContentDigestType) -> std::result::Result<(Bytes, String), Self::Error>
+  fn into_bytes_with_digest(
+    self,
+    cd_type: &ContentDigestType,
+  ) -> impl Future<Output = Result<(Bytes, String), Self::Error>> + Send
   where
-    Self: Sized,
+    Self: Sized + Send,
     Self::Data: Send,
   {
-    let body_bytes = self.into_bytes().await?;
-    let digest = match cd_type {
-      ContentDigestType::Sha256 => {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(&body_bytes);
-        hasher.finalize().to_vec()
-      }
+    async move {
+      let body_bytes = self.into_bytes().await?;
+      let digest = derive_digest(&body_bytes, cd_type);
 
-      ContentDigestType::Sha512 => {
-        let mut hasher = sha2::Sha512::new();
-        hasher.update(&body_bytes);
-        hasher.finalize().to_vec()
-      }
-    };
-
-    Ok((body_bytes, general_purpose::STANDARD.encode(digest)))
+      Ok((body_bytes, general_purpose::STANDARD.encode(digest)))
+    }
   }
 
   /// Verifies the consistency between self and given content-digest in &[u8]
-  async fn verify_digest(self, cd_type: &ContentDigestType, _cd: &[u8]) -> std::result::Result<bool, Self::Error>
+  fn verify_digest(self, cd_type: &ContentDigestType, _cd: &[u8]) -> impl Future<Output = Result<bool, Self::Error>> + Send
   where
-    Self: Sized,
+    Self: Sized + Send,
     Self::Data: Send,
   {
-    let body_bytes = self.into_bytes().await?;
-    let digest = match cd_type {
-      ContentDigestType::Sha256 => {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(&body_bytes);
-        hasher.finalize().to_vec()
-      }
+    async move {
+      let body_bytes = self.into_bytes().await?;
+      let digest = derive_digest(&body_bytes, cd_type);
 
-      ContentDigestType::Sha512 => {
-        let mut hasher = sha2::Sha512::new();
-        hasher.update(&body_bytes);
-        hasher.finalize().to_vec()
-      }
-    };
+      Ok(matches!(digest, _cd))
+    }
+  }
+}
 
-    Ok(matches!(digest, _cd))
+/// Returns the digest of the given body in Vec<u8>
+fn derive_digest(body_bytes: &Bytes, cd_type: &ContentDigestType) -> Vec<u8> {
+  match cd_type {
+    ContentDigestType::Sha256 => {
+      let mut hasher = sha2::Sha256::new();
+      hasher.update(body_bytes);
+      hasher.finalize().to_vec()
+    }
+
+    ContentDigestType::Sha512 => {
+      let mut hasher = sha2::Sha512::new();
+      hasher.update(body_bytes);
+      hasher.finalize().to_vec()
+    }
   }
 }
 
 impl<T: ?Sized> ContentDigest for T where T: http_body::Body {}
 
 /* --------------------------------------- */
-#[async_trait]
 /// A trait to set the http content digest in request in base64
 pub trait RequestContentDigest {
   type Error;
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> std::result::Result<Request<Full<Bytes>>, Self::Error>
+  fn set_content_digest(
+    self,
+    cd_type: &ContentDigestType,
+  ) -> impl Future<Output = Result<Request<Full<Bytes>>, Self::Error>> + Send
   where
     Self: Sized;
-  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
+  fn verify_content_digest(self) -> impl Future<Output = Result<bool, Self::Error>> + Send
   where
     Self: Sized;
 }
 
-#[async_trait]
 /// A trait to set the http content digest in response in base64
 pub trait ResponseContentDigest {
   type Error;
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> std::result::Result<Response<Full<Bytes>>, Self::Error>
+  fn set_content_digest(
+    self,
+    cd_type: &ContentDigestType,
+  ) -> impl Future<Output = Result<Response<Full<Bytes>>, Self::Error>> + Send
   where
     Self: Sized;
-  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
+  fn verify_content_digest(self) -> impl Future<Output = Result<bool, Self::Error>> + Send
   where
     Self: Sized;
 }
 
-#[async_trait]
 impl<B> RequestContentDigest for Request<B>
 where
   B: Body + Send,
@@ -108,7 +112,7 @@ where
 {
   type Error = anyhow::Error;
 
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> std::result::Result<Request<Full<Bytes>>, Self::Error>
+  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Request<Full<Bytes>>, Self::Error>
   where
     Self: Sized,
   {
@@ -127,7 +131,7 @@ where
     Ok(new_req)
   }
 
-  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
+  async fn verify_content_digest(self) -> Result<bool, Self::Error>
   where
     Self: Sized,
   {
@@ -141,7 +145,6 @@ where
   }
 }
 
-#[async_trait]
 impl<B> ResponseContentDigest for Response<B>
 where
   B: Body + Send,
@@ -149,7 +152,7 @@ where
 {
   type Error = anyhow::Error;
 
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> std::result::Result<Response<Full<Bytes>>, Self::Error>
+  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Response<Full<Bytes>>, Self::Error>
   where
     Self: Sized,
   {
@@ -167,7 +170,7 @@ where
     let new_req = Response::from_parts(parts, new_body);
     Ok(new_req)
   }
-  async fn verify_content_digest(self) -> std::result::Result<bool, Self::Error>
+  async fn verify_content_digest(self) -> Result<bool, Self::Error>
   where
     Self: Sized,
   {

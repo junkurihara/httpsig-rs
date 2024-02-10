@@ -11,6 +11,7 @@ homepage = "https://github.com/junkurihara/httpsig-rs"
 repository = "https://github.com/junkurihara/httpsig-rs"
 readme = "README.md"
 license = "MIT"
+rust-version = "1.75.0"
 
 [profile.release]
 codegen-units = 1

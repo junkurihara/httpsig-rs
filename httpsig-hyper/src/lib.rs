@@ -33,7 +33,7 @@ impl std::str::FromStr for ContentDigestType {
 }
 
 pub use httpsig::prelude;
-pub use hyper_content_digest::{ContentDigest, RequestContentDigest};
+pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
 pub use hyper_http::RequestMessageSignature;
 
 /* ----------------------------------------------------------------- */

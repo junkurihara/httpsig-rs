@@ -8,6 +8,7 @@ homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 readme.workspace = true
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,7 +17,6 @@ httpsig = { path = "../httpsig", version = "0.0.3" }
 
 anyhow = { version = "1.0.79" }
 tracing = { version = "0.1.40" }
-async-trait = { version = "0.1.77" }
 indexmap = { version = "2.2.2" }
 fxhash = { version = "0.2.1" }
 

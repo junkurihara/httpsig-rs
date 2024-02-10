@@ -1,5 +1,4 @@
 use anyhow::{bail, ensure};
-use async_trait::async_trait;
 use http::Request;
 use http_body::Body;
 use httpsig::prelude::{
@@ -8,28 +7,32 @@ use httpsig::prelude::{
   },
   HttpSignatureBase, HttpSignatureHeaders, HttpSignatureParams, SigningKey, VerifyingKey,
 };
+use std::future::Future;
 
 type IndexMap<K, V> = indexmap::IndexMap<K, V, fxhash::FxBuildHasher>;
 
 /* --------------------------------------- */
-#[async_trait]
 /// A trait to set the http message signature from given http signature params
 pub trait RequestMessageSignature {
   type Error;
 
   /// Set the http message signature from given http signature params and signing key
-  async fn set_message_signature<T>(
+  fn set_message_signature<T>(
     &mut self,
     signature_params: &HttpSignatureParams,
     signing_key: &T,
     signature_name: Option<&str>,
-  ) -> std::result::Result<(), Self::Error>
+  ) -> impl Future<Output = Result<(), Self::Error>> + Send
   where
     Self: Sized,
     T: SigningKey + Sync;
 
   /// Verify the http message signature with given verifying key if the request has signature and signature-input headers
-  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> std::result::Result<bool, Self::Error>
+  fn verify_message_signature<T>(
+    &self,
+    verifying_key: &T,
+    key_id: Option<&str>,
+  ) -> impl Future<Output = Result<bool, Self::Error>> + Send
   where
     Self: Sized,
     T: VerifyingKey + Sync;
@@ -38,7 +41,6 @@ pub trait RequestMessageSignature {
   fn has_message_signature(&self) -> bool;
 }
 
-#[async_trait]
 impl<D> RequestMessageSignature for Request<D>
 where
   D: Send + Body + Sync,
@@ -51,7 +53,7 @@ where
     signature_params: &HttpSignatureParams,
     signing_key: &T,
     signature_name: Option<&str>,
-  ) -> std::result::Result<(), Self::Error>
+  ) -> Result<(), Self::Error>
   where
     Self: Sized,
     T: SigningKey + Sync,
@@ -73,7 +75,7 @@ where
   /// Return true if the signature is valid, false if invalid for the given key,
   /// and error if the request does not have signature and/or signature-input headers
   /// If key_id is given, it is used to match the key id in signature params
-  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> std::result::Result<bool, Self::Error>
+  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<bool, Self::Error>
   where
     Self: Sized,
     T: VerifyingKey + Sync,
