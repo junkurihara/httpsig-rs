@@ -13,7 +13,7 @@ This crates provides a basic library [httpsig](./httpsig) and [its extension](./
 
 ## Usage of Extension for `hyper` (`httpsig-hyper`)
 
-```rust:
+```rust
 use http::Request;
 use http_body_util::Full;
 use httpsig_hyper::{prelude::*, *};
