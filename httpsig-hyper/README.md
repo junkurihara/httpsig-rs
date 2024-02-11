@@ -7,7 +7,7 @@
 
 You can run a basic example in [./examples](./examples/) as follows.
 
-```sh:
+```sh
 % cargo run --examples hyper
 ```
 
@@ -17,7 +17,7 @@ Note that even if `content-digest` header is specified as one of covered compone
 
 If you need to verify the body of a given message when `content-digest` is covered in `signature-input` header, you need to invoke `verify_content_digest()` function as follows.
 
-```:rust:
+```rust
 // first verifies the signature according to `signature-input` header
 let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
 let signature_verification = req.verify_message_signature(&public_key, None).await.unwrap();
