@@ -2,6 +2,8 @@ use http::Request;
 use http_body_util::Full;
 use httpsig_hyper::{prelude::*, *};
 
+type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, anyhow::Error>;
+
 const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 -----END PRIVATE KEY-----
@@ -13,7 +15,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
 const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
-async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
+async fn build_request() -> anyhow::Result<Request<BoxBody>> {
   let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
   let req = Request::builder()
     .method("GET")
@@ -27,7 +29,7 @@ async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
 }
 
 /// Sender function that generates a request with a signature
-async fn sender() -> Request<Full<bytes::Bytes>> {
+async fn sender() -> Request<BoxBody> {
   // build signature params that indicates objects to be signed
   let covered_components = COVERED_COMPONENTS
     .iter()
@@ -51,12 +53,15 @@ async fn sender() -> Request<Full<bytes::Bytes>> {
 }
 
 /// Receiver function that verifies a request with a signature
-async fn receiver(req: &Request<Full<bytes::Bytes>>) -> bool {
+async fn receiver<B>(req: &Request<B>) -> Result<(), anyhow::Error>
+where
+  B: http_body::Body + Send + Sync,
+{
   let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
   let key_id = public_key.key_id();
 
   // verify signature with checking key_id
-  req.verify_message_signature(&public_key, Some(&key_id)).await.unwrap()
+  req.verify_message_signature(&public_key, Some(&key_id)).await
 }
 
 #[tokio::main]
@@ -76,9 +81,9 @@ async fn main() {
 
   // receiver verifies the request with a signature
   let verification_res = receiver(&request_from_sender).await;
-  assert!(verification_res);
+  assert!(verification_res.is_ok());
 
   // if needed, content-digest can be verified separately
-  let verified = request_from_sender.verify_content_digest().await.unwrap();
-  assert!(verified);
+  let verified_request = request_from_sender.verify_content_digest().await;
+  assert!(verified_request.is_ok());
 }

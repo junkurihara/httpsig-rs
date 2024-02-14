@@ -44,6 +44,8 @@ mod tests {
   use http_body_util::Full;
   use httpsig::prelude::{PublicKey, SecretKey};
 
+  type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, anyhow::Error>;
+
   const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 -----END PRIVATE KEY-----
@@ -56,7 +58,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
-  async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
+  async fn build_request() -> anyhow::Result<Request<BoxBody>> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
     let req = Request::builder()
       .method("GET")
@@ -105,13 +107,13 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     // verify without checking key_id
     let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
-    let verification_res = req.verify_message_signature(&public_key, None).await.unwrap();
-    assert!(verification_res);
+    let verification_res = req.verify_message_signature(&public_key, None).await;
+    assert!(verification_res.is_ok());
 
     // verify with checking key_id
     let key_id = public_key.key_id();
-    let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await.unwrap();
-    assert!(verification_res);
+    let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await;
+    assert!(verification_res.is_ok());
 
     let verification_res = req.verify_message_signature(&public_key, Some("NotFoundKeyId")).await;
     assert!(verification_res.is_err());

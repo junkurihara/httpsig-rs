@@ -1,10 +1,10 @@
 use super::{ContentDigestType, CONTENT_DIGEST_HEADER};
 use anyhow::ensure;
 use base64::{engine::general_purpose, Engine as _};
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use http::{Request, Response};
 use http_body::Body;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use sfv::FromStr;
 use sha2::Digest;
 use std::future::Future;
@@ -19,10 +19,7 @@ pub trait ContentDigest: http_body::Body {
     Self: Sized + Send,
     Self::Data: Send,
   {
-    async {
-      let mut body_buf = self.collect().await?.aggregate();
-      Ok(body_buf.copy_to_bytes(body_buf.remaining()))
-    }
+    async { Ok(self.collect().await?.to_bytes()) }
   }
 
   /// Returns the content digest in base64
@@ -39,20 +36,6 @@ pub trait ContentDigest: http_body::Body {
       let digest = derive_digest(&body_bytes, cd_type);
 
       Ok((body_bytes, general_purpose::STANDARD.encode(digest)))
-    }
-  }
-
-  /// Verifies the consistency between self and given content-digest in &[u8]
-  fn verify_digest(self, cd_type: &ContentDigestType, _cd: &[u8]) -> impl Future<Output = Result<bool, Self::Error>> + Send
-  where
-    Self: Sized + Send,
-    Self::Data: Send,
-  {
-    async move {
-      let body_bytes = self.into_bytes().await?;
-      let digest = derive_digest(&body_bytes, cd_type);
-
-      Ok(matches!(digest, _cd))
     }
   }
 }
@@ -80,13 +63,18 @@ impl<T: ?Sized> ContentDigest for T where T: http_body::Body {}
 /// A trait to set the http content digest in request in base64
 pub trait RequestContentDigest {
   type Error;
+  type PassthroughRequest;
+
+  /// Set the content digest in the request
   fn set_content_digest(
     self,
     cd_type: &ContentDigestType,
-  ) -> impl Future<Output = Result<Request<Full<Bytes>>, Self::Error>> + Send
+  ) -> impl Future<Output = Result<Self::PassthroughRequest, Self::Error>> + Send
   where
     Self: Sized;
-  fn verify_content_digest(self) -> impl Future<Output = Result<bool, Self::Error>> + Send
+
+  /// Verify the content digest in the request and returns self if it's valid otherwise returns error
+  fn verify_content_digest(self) -> impl Future<Output = Result<Self::PassthroughRequest, Self::Error>> + Send
   where
     Self: Sized;
 }
@@ -94,13 +82,18 @@ pub trait RequestContentDigest {
 /// A trait to set the http content digest in response in base64
 pub trait ResponseContentDigest {
   type Error;
+  type PassthroughResponse;
+
+  /// Set the content digest in the response
   fn set_content_digest(
     self,
     cd_type: &ContentDigestType,
-  ) -> impl Future<Output = Result<Response<Full<Bytes>>, Self::Error>> + Send
+  ) -> impl Future<Output = Result<Self::PassthroughResponse, Self::Error>> + Send
   where
     Self: Sized;
-  fn verify_content_digest(self) -> impl Future<Output = Result<bool, Self::Error>> + Send
+
+  /// Verify the content digest in the response and returns self if it's valid otherwise returns error
+  fn verify_content_digest(self) -> impl Future<Output = Result<Self::PassthroughResponse, Self::Error>> + Send
   where
     Self: Sized;
 }
@@ -111,8 +104,10 @@ where
   <B as Body>::Data: Send,
 {
   type Error = anyhow::Error;
+  type PassthroughRequest = Request<BoxBody<Bytes, Self::Error>>;
 
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Request<Full<Bytes>>, Self::Error>
+  /// Set the content digest in the request
+  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Self::PassthroughRequest, Self::Error>
   where
     Self: Sized,
   {
@@ -121,7 +116,7 @@ where
       .into_bytes_with_digest(cd_type)
       .await
       .map_err(|_e| anyhow::anyhow!("Failed to generate digest"))?;
-    let new_body = Full::new(body_bytes);
+    let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
 
     parts
       .headers
@@ -131,17 +126,28 @@ where
     Ok(new_req)
   }
 
-  async fn verify_content_digest(self) -> Result<bool, Self::Error>
+  /// Verifies the consistency between self and given content-digest in &[u8]
+  /// Returns self in Bytes if it's valid otherwise returns error
+  async fn verify_content_digest(self) -> Result<Self::PassthroughRequest, Self::Error>
   where
     Self: Sized,
   {
     let header_map = self.headers();
-    let (cd_type, cd) = extract_content_digest(header_map).await?;
-    let (_, body) = self.into_parts();
-    body
-      .verify_digest(&cd_type, &cd)
+    let (cd_type, _expected_digest) = extract_content_digest(header_map).await?;
+    let (header, body) = self.into_parts();
+    let body_bytes = body
+      .into_bytes()
       .await
-      .map_err(|_e| anyhow::anyhow!("Failed to verify digest"))
+      .map_err(|_e| anyhow::anyhow!("Failed to get body bytes"))?;
+    let digest = derive_digest(&body_bytes, &cd_type);
+
+    if matches!(digest, _expected_digest) {
+      let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
+      let res = Request::from_parts(header, new_body);
+      Ok(res)
+    } else {
+      Err(anyhow::anyhow!("Invalid Content-Digest"))
+    }
   }
 }
 
@@ -151,8 +157,9 @@ where
   <B as Body>::Data: Send,
 {
   type Error = anyhow::Error;
+  type PassthroughResponse = Response<BoxBody<Bytes, Self::Error>>;
 
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Response<Full<Bytes>>, Self::Error>
+  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Self::PassthroughResponse, Self::Error>
   where
     Self: Sized,
   {
@@ -161,7 +168,7 @@ where
       .into_bytes_with_digest(cd_type)
       .await
       .map_err(|_e| anyhow::anyhow!("Failed to generate digest"))?;
-    let new_body = Full::new(body_bytes);
+    let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
 
     parts
       .headers
@@ -170,17 +177,26 @@ where
     let new_req = Response::from_parts(parts, new_body);
     Ok(new_req)
   }
-  async fn verify_content_digest(self) -> Result<bool, Self::Error>
+  async fn verify_content_digest(self) -> Result<Self::PassthroughResponse, Self::Error>
   where
     Self: Sized,
   {
     let header_map = self.headers();
-    let (cd_type, cd) = extract_content_digest(header_map).await?;
-    let (_, body) = self.into_parts();
-    body
-      .verify_digest(&cd_type, &cd)
+    let (cd_type, _expected_digest) = extract_content_digest(header_map).await?;
+    let (header, body) = self.into_parts();
+    let body_bytes = body
+      .into_bytes()
       .await
-      .map_err(|_e| anyhow::anyhow!("Failed to verify digest"))
+      .map_err(|_e| anyhow::anyhow!("Failed to get body bytes"))?;
+    let digest = derive_digest(&body_bytes, &cd_type);
+
+    if matches!(digest, _expected_digest) {
+      let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
+      let res = Response::from_parts(header, new_body);
+      Ok(res)
+    } else {
+      Err(anyhow::anyhow!("Invalid Content-Digest"))
+    }
   }
 }
 
@@ -250,8 +266,8 @@ mod tests {
     let digest = req.headers().get(CONTENT_DIGEST_HEADER).unwrap().to_str().unwrap();
     assert_eq!(digest, format!("sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"));
 
-    let verified = req.verify_content_digest().await.unwrap();
-    assert!(verified);
+    let verified = req.verify_content_digest().await;
+    assert!(verified.is_ok());
   }
 
   #[tokio::test]
@@ -270,7 +286,7 @@ mod tests {
     let digest = res.headers().get(CONTENT_DIGEST_HEADER).unwrap().to_str().unwrap();
     assert_eq!(digest, format!("sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"));
 
-    let verified = res.verify_content_digest().await.unwrap();
-    assert!(verified);
+    let verified = res.verify_content_digest().await;
+    assert!(verified.is_ok());
   }
 }

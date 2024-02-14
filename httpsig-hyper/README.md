@@ -20,11 +20,12 @@ If you need to verify the body of a given message when `content-digest` is cover
 ```rust
 // first verifies the signature according to `signature-input` header
 let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
-let signature_verification = req.verify_message_signature(&public_key, None).await.unwrap();
-assert!(verification_res);
+let signature_verification = req.verify_message_signature(&public_key, None).await;
+assert!(verification_res.is_ok());
 
 // if needed, content-digest can be verified separately (only if content-digest header is included in the header)
-let verified = request_from_sender.verify_content_digest().await.unwrap();
+let verified_request = request_from_sender.verify_content_digest().await;
+assert!(verified_request.is_ok())
 ```
 
 In the context of cryptography, the content-digest of *covered components* in signature-input is verified in the process of signature verification. So, hash value of `content-digest` is verified. To check if the `content-digest` is correctly bound with the message body, we need to run the hashing process separately.
