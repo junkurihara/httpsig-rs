@@ -40,7 +40,7 @@ async fn signer<B>(&mut req: Request<B>) -> anyhow::Result<()> {
 }
 
 /// Validation function that verifies a request with a signature
-async fn verifier<B>(req: &Request<B>) -> anyhow::Result<bool> {
+async fn verifier<B>(req: &Request<B>) -> anyhow::Result<()> {
   let public_key = PublicKey::from_pem(PUBLIC_KEY_STRING).unwrap();
   let key_id = public_key.key_id();
 
@@ -57,11 +57,10 @@ async fn main() {
   // receiver verifies the request with a signature
   let verified_message = receiver(&request_from_sender).await;
   assert!(verification_res.is_ok());
-  assert!(verification_res.unwrap())
 
   // if needed, content-digest can be verified separately
-  let verified_cd = request_from_sender.verify_content_digest().await.unwrap();
-  assert!(verified);
+  let verified_request = request_from_sender.verify_content_digest().await;
+  assert!(verified_request.is_ok());
 }
 
 ```

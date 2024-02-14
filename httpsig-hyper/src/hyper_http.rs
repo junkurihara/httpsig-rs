@@ -32,7 +32,7 @@ pub trait RequestMessageSignature {
     &self,
     verifying_key: &T,
     key_id: Option<&str>,
-  ) -> impl Future<Output = Result<bool, Self::Error>> + Send
+  ) -> impl Future<Output = Result<(), Self::Error>> + Send
   where
     Self: Sized,
     T: VerifyingKey + Sync;
@@ -72,10 +72,10 @@ where
   }
 
   /// Verify the http message signature with given verifying key if the request has signature and signature-input headers
-  /// Return true if the signature is valid, false if invalid for the given key,
-  /// and error if the request does not have signature and/or signature-input headers
+  /// Return Ok(()) if the signature is valid.
+  /// If invalid for the given key or error occurs (like the case where the request does not have signature and/or signature-input headers), return Err.
   /// If key_id is given, it is used to match the key id in signature params
-  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<bool, Self::Error>
+  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<(), Self::Error>
   where
     Self: Sized,
     T: VerifyingKey + Sync,
@@ -109,7 +109,11 @@ where
       })
       .any(|r| r.is_ok());
 
-    Ok(res)
+    if res {
+      Ok(())
+    } else {
+      bail!("Invalid signature for the verifying ey")
+    }
   }
 
   /// Check if the request has signature and signature-input headers
@@ -255,6 +259,8 @@ mod tests {
   use http_body_util::Full;
   use httpsig::prelude::{PublicKey, SecretKey};
 
+  type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, anyhow::Error>;
+
   const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 -----END PRIVATE KEY-----
@@ -266,7 +272,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
   const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
-  async fn build_request() -> anyhow::Result<Request<Full<bytes::Bytes>>> {
+  async fn build_request() -> anyhow::Result<Request<BoxBody>> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
     let req = Request::builder()
       .method("GET")
@@ -386,8 +392,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     // let signature = req.headers().get("signature").unwrap().to_str().unwrap();
 
     let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
-    let verification_res = req.verify_message_signature(&public_key, None).await.unwrap();
-    assert!(verification_res);
+    let verification_res = req.verify_message_signature(&public_key, None).await;
+    assert!(verification_res.is_ok());
   }
 
   #[tokio::test]
@@ -407,8 +413,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert_eq!(signature_headers_map[0].signature_name(), "custom_sig_name");
 
     let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
-    let verification_res = req.verify_message_signature(&public_key, None).await.unwrap();
-    assert!(verification_res);
+    let verification_res = req.verify_message_signature(&public_key, None).await;
+    assert!(verification_res.is_ok());
   }
 
   #[tokio::test]
@@ -422,8 +428,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
     let key_id = public_key.key_id();
-    let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await.unwrap();
-    assert!(verification_res);
+    let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await;
+    assert!(verification_res.is_ok());
 
     let verification_res = req.verify_message_signature(&public_key, Some("NotFoundKeyId")).await;
     assert!(verification_res.is_err());
