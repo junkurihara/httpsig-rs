@@ -5,7 +5,7 @@
 [![httpsig](https://img.shields.io/crates/v/httpsig.svg)](https://crates.io/crates/httpsig)
 [![httpsig](https://docs.rs/httpsig/badge.svg)](https://docs.rs/httpsig)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
+![Unit Test](https://github.com/junkurihara/httpsig-rs/actions/workflows/ci.yml/badge.svg)
 
 Implementation of [IETF draft of http message signatures](https://datatracker.ietf.org/doc/draft-ietf-httpbis-message-signatures/). Our implementation is currently based on [Draft-19](https://datatracker.ietf.org/doc/draft-ietf-httpbis-message-signatures/19/).
 
