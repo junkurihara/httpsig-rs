@@ -13,6 +13,8 @@ This crates provides a basic library [httpsig](./httpsig) and [its extension](./
 
 ## Usage of Extension for `hyper` (`httpsig-hyper`)
 
+This is a case signing and verifying a signature generated with asymmetric cryptography (like EdDSA), where `PUBLIC_KEY_STRING` and `SECRET_KEY_STRING` is a public and private keys in PEM format, respectively. Generating and verifying a MAC through symmetric crypto (HMAC-SHA256) is also supported.
+
 ```rust
 use http::Request;
 use http_body_util::Full;
