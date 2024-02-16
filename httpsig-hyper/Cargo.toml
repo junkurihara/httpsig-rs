@@ -2,7 +2,7 @@
 name = "httpsig-hyper"
 version.workspace = true
 edition.workspace = true
-description = "Hyper extension for http message signatures"
+description = "Hyper extension for http message signatures (RFC9421)"
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
