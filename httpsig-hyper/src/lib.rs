@@ -1,3 +1,4 @@
+mod error;
 mod hyper_content_digest;
 mod hyper_http;
 
@@ -22,16 +23,17 @@ impl std::fmt::Display for ContentDigestType {
 }
 
 impl std::str::FromStr for ContentDigestType {
-  type Err = anyhow::Error;
+  type Err = error::HyperDigestError;
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     match s {
       "sha-256" => Ok(ContentDigestType::Sha256),
       "sha-512" => Ok(ContentDigestType::Sha512),
-      _ => Err(anyhow::anyhow!("Invalid content-digest type")),
+      _ => Err(error::HyperDigestError::InvalidContentDigestType(s.to_string())),
     }
   }
 }
 
+pub use error::{HyperDigestError, HyperDigestResult, HyperSigError, HyperSigResult};
 pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
 pub use hyper_http::RequestMessageSignature;
@@ -44,7 +46,7 @@ mod tests {
   use http_body_util::Full;
   use httpsig::prelude::{PublicKey, SecretKey};
 
-  type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, anyhow::Error>;
+  type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, crate::error::HyperDigestError>;
 
   const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
@@ -58,17 +60,17 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
-  async fn build_request() -> anyhow::Result<Request<BoxBody>> {
+  async fn build_request() -> Request<BoxBody> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
     let req = Request::builder()
-      .method("GET")
-      .uri("https://example.com/parameters?var=this%20is%20a%20big%0Amultiline%20value&bar=with+plus+whitespace&fa%C3%A7ade%22%3A%20=something")
-      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
-      .header("content-type", "application/json")
-      .header("content-type", "application/json-patch+json")
-      .body(body)
-      .unwrap();
-    req.set_content_digest(&ContentDigestType::Sha256).await
+        .method("GET")
+        .uri("https://example.com/parameters?var=this%20is%20a%20big%0Amultiline%20value&bar=with+plus+whitespace&fa%C3%A7ade%22%3A%20=something")
+        .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+        .header("content-type", "application/json")
+        .header("content-type", "application/json-patch+json")
+        .body(body)
+        .unwrap();
+    req.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
   }
 
   #[test]
@@ -81,7 +83,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   async fn test_set_verify() {
     // show usage of set_message_signature and verify_message_signature
 
-    let mut req = build_request().await.unwrap();
+    let mut req = build_request().await;
 
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
 

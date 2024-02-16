@@ -13,6 +13,8 @@ This crates provides a basic library [httpsig](./httpsig) and [its extension](./
 
 ## Usage of Extension for `hyper` (`httpsig-hyper`)
 
+This is a case signing and verifying a signature generated with asymmetric cryptography (like EdDSA), where `PUBLIC_KEY_STRING` and `SECRET_KEY_STRING` is a public and private keys in PEM format, respectively. Generating and verifying a MAC through symmetric crypto (HMAC-SHA256) is also supported.
+
 ```rust
 use http::Request;
 use http_body_util::Full;
@@ -21,7 +23,7 @@ use httpsig_hyper::{prelude::*, *};
 const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
 /// Signer function that generates a request with a signature
-async fn signer<B>(&mut req: Request<B>) -> anyhow::Result<()> {
+async fn signer<B>(&mut req: Request<B>) -> HttpSigResult<()> {
   // build signature params that indicates objects to be signed
   let covered_components = COVERED_COMPONENTS
     .iter()
@@ -40,7 +42,7 @@ async fn signer<B>(&mut req: Request<B>) -> anyhow::Result<()> {
 }
 
 /// Validation function that verifies a request with a signature
-async fn verifier<B>(req: &Request<B>) -> anyhow::Result<()> {
+async fn verifier<B>(req: &Request<B>) -> HttpSigResult<()> {
   let public_key = PublicKey::from_pem(PUBLIC_KEY_STRING).unwrap();
   let key_id = public_key.key_id();
 

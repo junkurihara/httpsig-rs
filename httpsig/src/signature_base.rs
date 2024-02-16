@@ -1,7 +1,10 @@
 use crate::{
-  crypto::SigningKey, message_component::HttpMessageComponent, prelude::VerifyingKey, signature_params::HttpSignatureParams,
+  crypto::SigningKey,
+  error::{HttpSigError, HttpSigResult},
+  message_component::HttpMessageComponent,
+  prelude::VerifyingKey,
+  signature_params::HttpSignatureParams,
 };
-use anyhow::{anyhow, ensure};
 use base64::{engine::general_purpose, Engine as _};
 use fxhash::FxBuildHasher;
 use indexmap::IndexMap;
@@ -25,32 +28,41 @@ pub struct HttpSignatureHeaders {
 
 impl HttpSignatureHeaders {
   /// Generates (possibly multiple) HttpSignatureHeaders from signature and signature-input header values
-  pub fn try_parse(signature_header: &str, signature_input_header: &str) -> anyhow::Result<HttpSignatureHeadersMap> {
-    let signature_input = Parser::parse_dictionary(signature_input_header.as_bytes()).map_err(|e| anyhow!(e))?;
-    let signature = Parser::parse_dictionary(signature_header.as_bytes()).map_err(|e| anyhow!(e))?;
+  pub fn try_parse(signature_header: &str, signature_input_header: &str) -> HttpSigResult<HttpSignatureHeadersMap> {
+    let signature_input =
+      Parser::parse_dictionary(signature_input_header.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    let signature =
+      Parser::parse_dictionary(signature_header.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
 
-    ensure!(
-      signature.len() == signature_input.len(),
-      "The number of signature and signature-input headers are not the same"
-    );
-    ensure!(
-      signature.keys().all(|k| signature_input.contains_key(k)),
-      "The signature and signature-input headers are not the same"
-    );
-    ensure!(
-      signature.values().all(|v| matches!(
+    if signature.len() != signature_input.len() {
+      return Err(HttpSigError::BuildSignatureHeaderError(
+        "The number of signature and signature-input headers are not the same".to_string(),
+      ));
+    }
+
+    if !signature.keys().all(|k| signature_input.contains_key(k)) {
+      return Err(HttpSigError::BuildSignatureHeaderError(
+        "The signature and signature-input headers are not the same".to_string(),
+      ));
+    }
+    if !signature.values().all(|v| {
+      matches!(
         v,
         ListEntry::Item(Item {
           bare_item: BareItem::ByteSeq(_),
           ..
         })
-      )),
-      "The signature header is not a dictionary"
-    );
-    ensure!(
-      signature_input.values().all(|v| matches!(v, ListEntry::InnerList(_))),
-      "The signature-input header is not a dictionary"
-    );
+      )
+    }) {
+      return Err(HttpSigError::BuildSignatureHeaderError(
+        "The signature header is not a dictionary".to_string(),
+      ));
+    }
+    if !signature_input.values().all(|v| matches!(v, ListEntry::InnerList(_))) {
+      return Err(HttpSigError::BuildSignatureHeaderError(
+        "The signature-input header is not a dictionary".to_string(),
+      ));
+    }
 
     let res = signature_input
       .iter()
@@ -74,10 +86,9 @@ impl HttpSignatureHeaders {
             signature,
             signature_params,
           },
-        )) as anyhow::Result<(String, Self)>
+        )) as HttpSigResult<(String, Self)>
       })
       .collect::<Result<HttpSignatureHeadersMap, _>>()?;
-    // TODO: TODO: TODO: TODO: IndexMapにすべきか？
     Ok(res)
   }
 
@@ -129,10 +140,12 @@ impl HttpSignatureBase {
   /// This should not be exposed to user and not used directly.
   /// Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
   /// When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
-  pub fn try_new(component_lines: &[HttpMessageComponent], signature_params: &HttpSignatureParams) -> anyhow::Result<Self> {
+  pub fn try_new(component_lines: &[HttpMessageComponent], signature_params: &HttpSignatureParams) -> HttpSigResult<Self> {
     // check if the order of component lines is the same as the order of covered message component ids
     if component_lines.len() != signature_params.covered_components.len() {
-      anyhow::bail!("The number of component lines is not the same as the number of covered message component ids");
+      return Err(HttpSigError::BuildSignatureBaseError(
+        "The number of component lines is not the same as the number of covered message component ids".to_string(),
+      ));
     }
 
     let assertion = component_lines
@@ -140,7 +153,9 @@ impl HttpSignatureBase {
       .zip(signature_params.covered_components.iter())
       .all(|(component_line, covered_component_id)| component_line.id == *covered_component_id);
     if !assertion {
-      anyhow::bail!("The order of component lines is not the same as the order of covered message component ids");
+      return Err(HttpSigError::BuildSignatureBaseError(
+        "The order of component lines is not the same as the order of covered message component ids".to_string(),
+      ));
     }
 
     Ok(Self {
@@ -156,7 +171,7 @@ impl HttpSignatureBase {
   }
 
   /// Build signature from given signing key
-  pub fn build_raw_signature(&self, signing_key: &impl SigningKey) -> anyhow::Result<Vec<u8>> {
+  pub fn build_raw_signature(&self, signing_key: &impl SigningKey) -> HttpSigResult<Vec<u8>> {
     let bytes = self.as_bytes();
     signing_key.sign(&bytes)
   }
@@ -166,7 +181,7 @@ impl HttpSignatureBase {
     &self,
     signing_key: &impl SigningKey,
     signature_name: Option<&str>,
-  ) -> anyhow::Result<HttpSignatureHeaders> {
+  ) -> HttpSigResult<HttpSignatureHeaders> {
     let signature = self.build_raw_signature(signing_key)?;
     Ok(HttpSignatureHeaders {
       signature_name: signature_name.unwrap_or(DEFAULT_SIGNATURE_NAME).to_string(),
@@ -180,7 +195,7 @@ impl HttpSignatureBase {
     &self,
     verifying_key: &impl VerifyingKey,
     signature_headers: &HttpSignatureHeaders,
-  ) -> anyhow::Result<()> {
+  ) -> HttpSigResult<()> {
     let signature_bytes = signature_headers.signature.0.as_slice();
     verifying_key.verify(&self.as_bytes(), signature_bytes)
   }

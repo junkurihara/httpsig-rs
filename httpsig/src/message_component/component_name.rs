@@ -1,3 +1,6 @@
+use crate::error::{HttpSigError, HttpSigResult};
+use sfv::BareItem;
+
 /* ---------------------------------------------------------------- */
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http message component identifier
@@ -8,11 +11,9 @@ pub enum HttpMessageComponentName {
   Derived(DerivedComponentName),
 }
 
-use anyhow::bail;
-use sfv::BareItem;
 impl TryFrom<&BareItem> for HttpMessageComponentName {
-  type Error = anyhow::Error;
-  fn try_from(value: &BareItem) -> Result<Self, Self::Error> {
+  type Error = HttpSigError;
+  fn try_from(value: &BareItem) -> HttpSigResult<Self> {
     match value {
       BareItem::String(name) => {
         if name.starts_with('@') {
@@ -21,7 +22,9 @@ impl TryFrom<&BareItem> for HttpMessageComponentName {
           Ok(Self::HttpField(name.to_string()))
         }
       }
-      _ => bail!("Invalid http message component name: {:?}", value),
+      _ => Err(HttpSigError::InvalidComponentName(format!(
+        "Invalid http message component name: {value:?}"
+      ))),
     }
   }
 }

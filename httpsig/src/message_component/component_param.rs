@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure};
+use crate::error::{HttpSigError, HttpSigResult};
 use sfv::{Parser, SerializeValue};
 
 type IndexSet<K> = indexmap::IndexSet<K, fxhash::FxBuildHasher>;
@@ -38,7 +38,7 @@ impl From<HttpMessageComponentParam> for String {
 }
 
 impl TryFrom<(&str, &sfv::BareItem)> for HttpMessageComponentParam {
-  type Error = anyhow::Error;
+  type Error = HttpSigError;
   fn try_from((key, val): (&str, &sfv::BareItem)) -> Result<Self, Self::Error> {
     match key {
       "sf" => Ok(Self::Sf),
@@ -46,14 +46,20 @@ impl TryFrom<(&str, &sfv::BareItem)> for HttpMessageComponentParam {
       "tr" => Ok(Self::Tr),
       "req" => Ok(Self::Req),
       "name" => {
-        let name = val.as_str().ok_or(anyhow::anyhow!("Invalid http field param: name"))?;
+        let name = val.as_str().ok_or(HttpSigError::InvalidComponentParam(
+          "Invalid http field param: name".to_string(),
+        ))?;
         Ok(Self::Name(name.to_string()))
       }
       "key" => {
-        let key = val.as_str().ok_or(anyhow::anyhow!("Invalid http field param: key"))?;
+        let key = val.as_str().ok_or(HttpSigError::InvalidComponentParam(
+          "Invalid http field param: key".to_string(),
+        ))?;
         Ok(Self::Key(key.to_string()))
       }
-      _ => bail!("Invalid http field param: {}", key),
+      _ => Err(HttpSigError::InvalidComponentParam(format!(
+        "Invalid http field param: {key}"
+      ))),
     }
   }
 }
@@ -71,13 +77,12 @@ impl std::hash::Hash for HttpMessageComponentParams {
 }
 
 impl TryFrom<&sfv::Parameters> for HttpMessageComponentParams {
-  type Error = anyhow::Error;
+  type Error = HttpSigError;
   fn try_from(val: &sfv::Parameters) -> Result<Self, Self::Error> {
     let hs = val
       .iter()
       .map(|(k, v)| HttpMessageComponentParam::try_from((k.as_str(), v)))
-      .collect::<Result<IndexSet<_>, _>>()
-      .map_err(|e| anyhow::anyhow!("{e}"))?;
+      .collect::<Result<IndexSet<_>, _>>()?;
     Ok(Self(hs))
   }
 }
@@ -97,7 +102,7 @@ impl std::fmt::Display for HttpMessageComponentParams {
 
 /* ---------------------------------------------------------------- */
 /// Handle `sf` parameter
-pub(super) fn handle_params_sf(field_values: &mut [String]) -> anyhow::Result<()> {
+pub(super) fn handle_params_sf(field_values: &mut [String]) -> HttpSigResult<()> {
   let parsed_list = field_values
     .iter()
     .map(|v| {
@@ -106,18 +111,14 @@ pub(super) fn handle_params_sf(field_values: &mut [String]) -> anyhow::Result<()
       } else if let Ok(dict) = Parser::parse_dictionary(v.as_bytes()) {
         dict.serialize_value()
       } else {
-        bail!("invalid structured field value for sf");
+        Err("invalid structured field value for sf")
       }
-      .map_err(|e| anyhow::anyhow!("{e}"))
     })
-    .collect::<Vec<_>>();
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}")))?;
 
-  ensure!(
-    parsed_list.iter().all(|v| v.is_ok()),
-    "Failed to parse structured field value"
-  );
   field_values.iter_mut().zip(parsed_list).for_each(|(v, p)| {
-    *v = p.unwrap();
+    *v = p;
   });
 
   Ok(())
@@ -125,31 +126,23 @@ pub(super) fn handle_params_sf(field_values: &mut [String]) -> anyhow::Result<()
 
 /* ---------------------------------------------------------------- */
 /// Handle `key` parameter, returns new field values
-pub(super) fn handle_params_key_into(field_values: &[String], key: &str) -> anyhow::Result<Vec<String>> {
+pub(super) fn handle_params_key_into(field_values: &[String], key: &str) -> HttpSigResult<Vec<String>> {
   let dicts = field_values
     .iter()
     .map(|v| Parser::parse_dictionary(v.as_bytes()))
-    .collect::<Vec<_>>();
-  ensure!(dicts.iter().all(|v| v.is_ok()), "Failed to parse structured field value");
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}")))?;
 
   let found_entries = dicts
     .into_iter()
-    .map(|v| v.unwrap())
     .filter_map(|dict| {
       dict.get(key).map(|v| {
         let sfvalue: sfv::List = vec![v.clone()];
-        sfvalue
+        sfvalue.serialize_value()
       })
     })
-    .map(|v| v.serialize_value().map_err(|e| anyhow::anyhow!("{e}")))
-    .collect::<Vec<_>>();
-
-  ensure!(
-    found_entries.iter().all(|v| v.is_ok()),
-    "Failed to serialize structured field value"
-  );
-
-  let found_entries = found_entries.into_iter().map(|v| v.unwrap()).collect::<Vec<_>>();
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| HttpSigError::InvalidComponentParam(format!("Failed to serialize structured field value: {e}")))?;
 
   Ok(found_entries)
 }

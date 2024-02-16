@@ -1,6 +1,8 @@
 mod asymmetric;
 mod symmetric;
 
+use crate::error::HttpSigResult;
+
 pub use asymmetric::{PublicKey, SecretKey};
 pub use symmetric::SharedKey;
 
@@ -31,14 +33,14 @@ impl std::fmt::Display for AlgorithmName {
 
 /// SigningKey trait
 pub trait SigningKey {
-  fn sign(&self, data: &[u8]) -> anyhow::Result<Vec<u8>>;
+  fn sign(&self, data: &[u8]) -> HttpSigResult<Vec<u8>>;
   fn key_id(&self) -> String;
   fn alg(&self) -> AlgorithmName;
 }
 
 /// VerifyingKey trait
 pub trait VerifyingKey {
-  fn verify(&self, data: &[u8], signature: &[u8]) -> anyhow::Result<()>;
+  fn verify(&self, data: &[u8], signature: &[u8]) -> HttpSigResult<()>;
   fn key_id(&self) -> String;
   fn alg(&self) -> AlgorithmName;
 }
