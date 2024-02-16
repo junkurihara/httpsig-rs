@@ -15,7 +15,7 @@ const DEFAULT_DURATION: u64 = 300;
 /* ---------------------------------------- */
 #[derive(Debug, Clone, Default)]
 /// Struct defining Http message signature parameters
-/// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-signature-parameters
+/// https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
 pub struct HttpSignatureParams {
   /// created unix timestamp.
   pub created: Option<u64>,

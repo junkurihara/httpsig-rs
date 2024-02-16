@@ -127,7 +127,7 @@ impl std::fmt::Display for HttpSignature {
 }
 
 /// Signature Base
-/// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.5
+/// https://datatracker.ietf.org/doc/html/rfc9421#section-2.5
 pub struct HttpSignatureBase {
   /// HTTP message field and derived components ordered as in the vector in signature params
   component_lines: Vec<HttpMessageComponent>,

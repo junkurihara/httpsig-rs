@@ -11,7 +11,7 @@ type HmacSha256 = Hmac<sha2::Sha256>;
 
 /* -------------------------------- */
 /// Shared key for http signature
-/// Name conventions follow [the IETF draft](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#section-6.2.2)
+/// Name conventions follow [Section 6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum SharedKey {
   /// hmac-sha256
   HmacSha256(Vec<u8>),

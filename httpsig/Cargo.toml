@@ -2,7 +2,7 @@
 name = "httpsig"
 version.workspace = true
 edition.workspace = true
-description = "Implementation of IETF draft of http message signatures"
+description = "Implementation of IETF RFC 9421 of http message signatures"
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true

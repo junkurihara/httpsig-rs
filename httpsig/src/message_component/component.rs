@@ -58,9 +58,9 @@ impl TryFrom<(&HttpMessageComponentId, &[String])> for HttpMessageComponent {
 }
 
 impl std::fmt::Display for HttpMessageComponent {
+  /// This always can append single trailing space (SP) for empty value
+  /// https://datatracker.ietf.org/doc/html/rfc9421#section-2.1
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    // This always can append single trailing space (SP) for empty value
-    // https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.1
     write!(f, "{}: {}", self.id, self.value)
   }
 }

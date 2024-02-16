@@ -33,7 +33,7 @@ mod params_oids {
 
 /* -------------------------------- */
 /// Secret key for http signature
-/// Name conventions follow [the IETF draft](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#section-6.2.2)
+/// Name conventions follow [Section-6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum SecretKey {
   /// ecdsa-p384-sha384
   EcdsaP384Sha384(EcSecretKey<NistP384>),
@@ -164,7 +164,7 @@ impl super::VerifyingKey for SecretKey {
 
 /* -------------------------------- */
 /// Public key for http signature, only for asymmetric algorithm
-/// Name conventions follow [the IETF draft](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#section-6.2.2)
+/// Name conventions follow [Section 6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum PublicKey {
   /// ecdsa-p256-sha256
   EcdsaP256Sha256(EcPublicKey<NistP256>),

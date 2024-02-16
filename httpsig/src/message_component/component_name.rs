@@ -41,7 +41,7 @@ impl std::fmt::Display for HttpMessageComponentName {
 /* ---------------------------------------------------------------- */
 #[derive(PartialEq, Eq, Clone, Hash, Debug)]
 /// Derive components from http message, which is expressed as @method, @path, @authority, etc. in @signature-params
-/// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-derived-components
+/// https://datatracker.ietf.org/doc/html/rfc9421#name-derived-components
 pub enum DerivedComponentName {
   Method,
   TargetUri,

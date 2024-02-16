@@ -28,7 +28,7 @@ mod tests {
   use base64::{engine::general_purpose, Engine as _};
 
   /* ----------------------------------------------------------------- */
-  // params from https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#name-signing-a-request-using-ed2
+  // params from https://datatracker.ietf.org/doc/html/rfc9421#name-signing-a-request-using-ed2
   const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIJ+DYvh6SEqVTm50DFtMDoQikTmiCqirVv9mWG9qfSnF
 -----END PRIVATE KEY-----
@@ -68,7 +68,7 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgw
   }
 
   /* ----------------------------------------------------------------- */
-  // params from https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-message-signatures#name-signing-a-request-using-hma
+  // params from https://datatracker.ietf.org/doc/html/rfc9421#name-signing-a-request-using-hma
   const HMACSHA256_SECRET_KEY: &str =
     r##"uzvJfB4u3N0Jy4T7NZ75MDVcr8zSTInedJtkgcu46YW4XByzNJjxBdtjUkdJPBtbmHhIDi6pcl8jsasjlTMtDQ=="##;
   const HMACSHA256_SIGNATURE_BASE: &str = r##""date": Tue, 20 Apr 2021 02:07:55 GMT

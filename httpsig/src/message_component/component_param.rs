@@ -6,20 +6,20 @@ type IndexSet<K> = indexmap::IndexSet<K, fxhash::FxBuildHasher>;
 /* ---------------------------------------------------------------- */
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 /// Http message component parameters that appends with `;` in the signature input
-/// https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#secion-2.1
+/// https://datatracker.ietf.org/doc/html/rfc9421#secion-2.1
 pub enum HttpMessageComponentParam {
-  /// sf: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.1.1
+  /// sf: https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.1
   Sf,
-  /// key: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.1.2
+  /// key: https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.2
   /// This will be encoded to `;key="..."` in the signature input
   Key(String),
-  /// bs: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.1.3
+  /// bs: https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.3
   Bs,
-  // tr: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.1.4
+  // tr: https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.4
   Tr,
-  // req: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#section-2.4
+  // req: https://datatracker.ietf.org/doc/html/rfc9421#section-2.4
   Req,
-  // name: https://www.ietf.org/archive/id/draft-ietf-httpbis-message-signatures-19.html#name-query-parameters
+  // name: https://datatracker.ietf.org/doc/html/rfc9421#name-query-parameters
   /// This will be encoded to `;name="..."` in the signature input
   Name(String),
 }

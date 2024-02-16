@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Unit Test](https://github.com/junkurihara/httpsig-rs/actions/workflows/ci.yml/badge.svg)
 
-Implementation of [IETF draft of http message signatures](https://datatracker.ietf.org/doc/draft-ietf-httpbis-message-signatures/). Our implementation is currently based on [Draft-19](https://datatracker.ietf.org/doc/draft-ietf-httpbis-message-signatures/19/).
+Implementation of [IETF RFC 9421](https://datatracker.ietf.org/doc/html/rfc9421) of http message signatures.
 
 This crates provides a basic library [httpsig](./httpsig) and [its extension](./httpsig-hyper/) of `hyper`'s http library. At this point, our library can sign and verify only request messages of hyper. (TODO: response message signature)
 
