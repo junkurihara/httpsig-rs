@@ -1,4 +1,5 @@
 mod crypto;
+mod error;
 mod message_component;
 mod signature_base;
 mod signature_params;
@@ -14,6 +15,7 @@ pub mod prelude {
 
   pub use crate::{
     crypto::{PublicKey, SecretKey, SharedKey, SigningKey, VerifyingKey},
+    error::{HttpSigError, HttpSigResult},
     signature_base::{HttpSignature, HttpSignatureBase, HttpSignatureHeaders},
     signature_params::HttpSignatureParams,
   };

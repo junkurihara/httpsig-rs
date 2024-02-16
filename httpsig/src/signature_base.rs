@@ -158,7 +158,7 @@ impl HttpSignatureBase {
   /// Build signature from given signing key
   pub fn build_raw_signature(&self, signing_key: &impl SigningKey) -> anyhow::Result<Vec<u8>> {
     let bytes = self.as_bytes();
-    signing_key.sign(&bytes)
+    signing_key.sign(&bytes).map_err(|e| anyhow!(e))
   }
 
   /// Build the signature and signature-input headers structs
@@ -182,7 +182,9 @@ impl HttpSignatureBase {
     signature_headers: &HttpSignatureHeaders,
   ) -> anyhow::Result<()> {
     let signature_bytes = signature_headers.signature.0.as_slice();
-    verifying_key.verify(&self.as_bytes(), signature_bytes)
+    verifying_key
+      .verify(&self.as_bytes(), signature_bytes)
+      .map_err(|e| anyhow!(e))
   }
 }
 

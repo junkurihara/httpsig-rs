@@ -1,5 +1,5 @@
 use super::AlgorithmName;
-use anyhow::Result;
+use crate::error::{HttpSigError, HttpSigResult};
 use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -16,7 +16,7 @@ pub enum SharedKey {
 
 impl SharedKey {
   /// Create a new shared key from base64 encoded string
-  pub fn from_base64(key: &str) -> Result<Self> {
+  pub fn from_base64(key: &str) -> HttpSigResult<Self> {
     let key = general_purpose::STANDARD.decode(key)?;
     Ok(SharedKey::HmacSha256(key))
   }
@@ -24,7 +24,7 @@ impl SharedKey {
 
 impl super::SigningKey for SharedKey {
   /// Sign the data
-  fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
+  fn sign(&self, data: &[u8]) -> HttpSigResult<Vec<u8>> {
     match self {
       SharedKey::HmacSha256(key) => {
         let mut mac = HmacSha256::new_from_slice(key).unwrap();
@@ -46,13 +46,13 @@ impl super::SigningKey for SharedKey {
 }
 impl super::VerifyingKey for SharedKey {
   /// Verify the mac
-  fn verify(&self, data: &[u8], expected_mac: &[u8]) -> Result<()> {
+  fn verify(&self, data: &[u8], expected_mac: &[u8]) -> HttpSigResult<()> {
     use super::SigningKey;
     let calcurated_mac = self.sign(data)?;
     if calcurated_mac == expected_mac {
       Ok(())
     } else {
-      Err(anyhow::anyhow!("Invalid mac"))
+      Err(HttpSigError::InvalidSignature("Invalid MAC".to_string()))
     }
   }
 
@@ -86,6 +86,7 @@ mod tests {
     let key = SharedKey::HmacSha256(inner.to_vec());
     let data = b"hello";
     let signature = key.sign(data).unwrap();
-    key.verify(data, &signature).unwrap();
+    let res = key.verify(data, &signature);
+    assert!(res.is_ok());
   }
 }
