@@ -2,7 +2,7 @@ use http::Request;
 use http_body_util::Full;
 use httpsig_hyper::{prelude::*, *};
 
-type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, anyhow::Error>;
+type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, HyperDigestError>;
 
 const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
@@ -17,7 +17,7 @@ const HMACSHA256_SECRET_KEY: &str =
 
 const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
-async fn build_request() -> anyhow::Result<Request<BoxBody>> {
+async fn build_request() -> Request<BoxBody> {
   let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
   let req = Request::builder()
     .method("GET")
@@ -27,7 +27,7 @@ async fn build_request() -> anyhow::Result<Request<BoxBody>> {
     .header("content-type", "application/json-patch+json")
     .body(body)
     .unwrap();
-  req.set_content_digest(&ContentDigestType::Sha256).await
+  req.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
 }
 
 /// Sender function that generates a request with a signature
@@ -75,7 +75,7 @@ async fn sender_hs256(req: &mut Request<BoxBody>) {
 }
 
 /// Receiver function that verifies a request with a signature of ed25519
-async fn receiver_ed25519<B>(req: &Request<B>) -> Result<(), anyhow::Error>
+async fn receiver_ed25519<B>(req: &Request<B>) -> HyperSigResult<()>
 where
   B: http_body::Body + Send + Sync,
 {
@@ -88,7 +88,7 @@ where
 }
 
 /// Receiver function that verifies a request with a signature of hmac-sha256
-async fn receiver_hmac_sha256<B>(req: &Request<B>) -> Result<(), anyhow::Error>
+async fn receiver_hmac_sha256<B>(req: &Request<B>) -> HyperSigResult<()>
 where
   B: http_body::Body + Send + Sync,
 {
@@ -103,7 +103,7 @@ where
 async fn scenario_multiple_signatures() {
   println!("--------------  Scenario: Multiple signatures  --------------");
 
-  let mut request_from_sender = build_request().await.unwrap();
+  let mut request_from_sender = build_request().await;
   println!("Request header before signing:\n{:#?}", request_from_sender.headers());
 
   // sender signs a signature of ed25519 and hmac-sha256
@@ -152,7 +152,7 @@ async fn scenario_multiple_signatures() {
 async fn scenario_single_signature_ed25519() {
   println!("--------------  Scenario: Single signature with Ed25519  --------------");
 
-  let mut request_from_sender = build_request().await.unwrap();
+  let mut request_from_sender = build_request().await;
   println!("Request header before signing:\n{:#?}", request_from_sender.headers());
 
   // sender signs a signature of ed25519

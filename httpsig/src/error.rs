@@ -40,8 +40,21 @@ pub enum HttpSigError {
   #[error("Invalid http message component: {0}")]
   InvalidComponent(String),
 
+  /* ----- Signature params errors ----- */
+  /// Invalid signature params
+  #[error("Invalid signature params: {0}")]
+  InvalidSignatureParams(String),
+
+  /// Error in building signature header
+  #[error("Failed to build signature header: {0}")]
+  BuildSignatureHeaderError(String),
+
+  /// Error in building signature base
+  #[error("Failed to build signature base: {0}")]
+  BuildSignatureBaseError(String),
+
   /* ----- Other errors ----- */
-  /// Others
-  #[error("Others: {0}")]
-  Others(#[from] anyhow::Error),
+  /// NotYetImplemented
+  #[error("Not yet implemented: {0}")]
+  NotYetImplemented(String),
 }

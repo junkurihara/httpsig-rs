@@ -1,10 +1,10 @@
 use crate::{
   crypto::{AlgorithmName, SigningKey},
+  error::{HttpSigError, HttpSigResult},
   message_component::HttpMessageComponentId,
   trace::*,
   util::has_unique_elements,
 };
-use anyhow::ensure;
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
 use sfv::{ListEntry, Parser, SerializeValue};
@@ -35,12 +35,14 @@ pub struct HttpSignatureParams {
 
 impl HttpSignatureParams {
   /// Create new HttpSignatureParams object for the given covered components only with `created`` current timestamp.
-  pub fn try_new(covered_components: &[HttpMessageComponentId]) -> anyhow::Result<Self> {
+  pub fn try_new(covered_components: &[HttpMessageComponentId]) -> HttpSigResult<Self> {
     let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    ensure!(
-      has_unique_elements(covered_components.iter()),
-      "duplicate covered component ids"
-    );
+    if !has_unique_elements(covered_components.iter()) {
+      return Err(HttpSigError::InvalidSignatureParams(
+        "duplicate covered component ids".to_string(),
+      ));
+    }
+
     Ok(Self {
       created: Some(created),
       covered_components: covered_components.to_vec(),
@@ -141,10 +143,12 @@ impl std::fmt::Display for HttpSignatureParams {
 }
 
 impl TryFrom<&ListEntry> for HttpSignatureParams {
-  type Error = anyhow::Error;
+  type Error = HttpSigError;
   /// Convert from ListEntry to HttpSignatureParams
-  fn try_from(value: &ListEntry) -> anyhow::Result<Self> {
-    ensure!(matches!(value, ListEntry::InnerList(_)), "Invalid signature params");
+  fn try_from(value: &ListEntry) -> HttpSigResult<Self> {
+    if !matches!(value, ListEntry::InnerList(_)) {
+      return Err(HttpSigError::InvalidSignatureParams("Invalid signature params".to_string()));
+    }
     let inner_list_with_params = match value {
       ListEntry::InnerList(v) => v,
       _ => unreachable!(),
@@ -154,14 +158,16 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
       .iter()
       .map(|v| {
         v.serialize_value()
-          .map_err(|e| anyhow::anyhow!("{e}"))
-          .and_then(|v| HttpMessageComponentId::try_from(v.as_str()).map_err(|e| anyhow::anyhow!(e)))
+          .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))
+          .and_then(|v| HttpMessageComponentId::try_from(v.as_str()))
       })
       .collect::<Result<Vec<_>, _>>()?;
-    ensure!(
-      has_unique_elements(covered_components.iter()),
-      "duplicate covered component ids"
-    );
+
+    if !has_unique_elements(covered_components.iter()) {
+      return Err(HttpSigError::InvalidSignatureParams(
+        "duplicate covered component ids".to_string(),
+      ));
+    }
 
     let mut params = Self {
       created: None,
@@ -192,12 +198,13 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
 }
 
 impl TryFrom<&str> for HttpSignatureParams {
-  type Error = anyhow::Error;
+  type Error = HttpSigError;
   /// Convert from string to HttpSignatureParams
-  fn try_from(value: &str) -> anyhow::Result<Self> {
-    let sfv_parsed = Parser::parse_list(value.as_bytes()).map_err(|e| anyhow::anyhow!("{e}"))?;
-    ensure!(sfv_parsed.len() == 1, "Invalid signature params");
-    ensure!(matches!(sfv_parsed[0], ListEntry::InnerList(_)), "Invalid signature params");
+  fn try_from(value: &str) -> HttpSigResult<Self> {
+    let sfv_parsed = Parser::parse_list(value.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    if sfv_parsed.len() != 1 || !matches!(sfv_parsed[0], ListEntry::InnerList(_)) {
+      return Err(HttpSigError::InvalidSignatureParams("Invalid signature params".to_string()));
+    }
     HttpSignatureParams::try_from(&sfv_parsed[0])
   }
 }

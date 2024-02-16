@@ -1,5 +1,5 @@
 use super::{ContentDigestType, CONTENT_DIGEST_HEADER};
-use anyhow::ensure;
+use crate::error::{HyperDigestError, HyperDigestResult};
 use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use http::{Request, Response};
@@ -103,11 +103,11 @@ where
   B: Body + Send,
   <B as Body>::Data: Send,
 {
-  type Error = anyhow::Error;
+  type Error = HyperDigestError;
   type PassthroughRequest = Request<BoxBody<Bytes, Self::Error>>;
 
   /// Set the content digest in the request
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Self::PassthroughRequest, Self::Error>
+  async fn set_content_digest(self, cd_type: &ContentDigestType) -> HyperDigestResult<Self::PassthroughRequest>
   where
     Self: Sized,
   {
@@ -115,7 +115,7 @@ where
     let (body_bytes, digest) = body
       .into_bytes_with_digest(cd_type)
       .await
-      .map_err(|_e| anyhow::anyhow!("Failed to generate digest"))?;
+      .map_err(|_e| HyperDigestError::HttpBodyError("Failed to generate digest".to_string()))?;
     let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
 
     parts
@@ -138,7 +138,7 @@ where
     let body_bytes = body
       .into_bytes()
       .await
-      .map_err(|_e| anyhow::anyhow!("Failed to get body bytes"))?;
+      .map_err(|_e| HyperDigestError::HttpBodyError("Failed to get body bytes".to_string()))?;
     let digest = derive_digest(&body_bytes, &cd_type);
 
     if matches!(digest, _expected_digest) {
@@ -146,7 +146,9 @@ where
       let res = Request::from_parts(header, new_body);
       Ok(res)
     } else {
-      Err(anyhow::anyhow!("Invalid Content-Digest"))
+      Err(HyperDigestError::InvalidContentDigest(
+        "Content-Digest verification failed".to_string(),
+      ))
     }
   }
 }
@@ -156,10 +158,10 @@ where
   B: Body + Send,
   <B as Body>::Data: Send,
 {
-  type Error = anyhow::Error;
+  type Error = HyperDigestError;
   type PassthroughResponse = Response<BoxBody<Bytes, Self::Error>>;
 
-  async fn set_content_digest(self, cd_type: &ContentDigestType) -> Result<Self::PassthroughResponse, Self::Error>
+  async fn set_content_digest(self, cd_type: &ContentDigestType) -> HyperDigestResult<Self::PassthroughResponse>
   where
     Self: Sized,
   {
@@ -167,7 +169,7 @@ where
     let (body_bytes, digest) = body
       .into_bytes_with_digest(cd_type)
       .await
-      .map_err(|_e| anyhow::anyhow!("Failed to generate digest"))?;
+      .map_err(|_e| HyperDigestError::HttpBodyError("Failed to generate digest".to_string()))?;
     let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
 
     parts
@@ -177,7 +179,7 @@ where
     let new_req = Response::from_parts(parts, new_body);
     Ok(new_req)
   }
-  async fn verify_content_digest(self) -> Result<Self::PassthroughResponse, Self::Error>
+  async fn verify_content_digest(self) -> HyperDigestResult<Self::PassthroughResponse>
   where
     Self: Sized,
   {
@@ -187,7 +189,7 @@ where
     let body_bytes = body
       .into_bytes()
       .await
-      .map_err(|_e| anyhow::anyhow!("Failed to get body bytes"))?;
+      .map_err(|_e| HyperDigestError::HttpBodyError("Failed to get body bytes".to_string()))?;
     let digest = derive_digest(&body_bytes, &cd_type);
 
     if matches!(digest, _expected_digest) {
@@ -195,31 +197,40 @@ where
       let res = Response::from_parts(header, new_body);
       Ok(res)
     } else {
-      Err(anyhow::anyhow!("Invalid Content-Digest"))
+      Err(HyperDigestError::InvalidContentDigest(
+        "Content-Digest verification failed".to_string(),
+      ))
     }
   }
 }
 
-async fn extract_content_digest(header_map: &http::HeaderMap) -> anyhow::Result<(ContentDigestType, Vec<u8>)> {
+async fn extract_content_digest(header_map: &http::HeaderMap) -> HyperDigestResult<(ContentDigestType, Vec<u8>)> {
   let content_digest_header = header_map
     .get(CONTENT_DIGEST_HEADER)
-    .ok_or(anyhow::anyhow!("Content-Digest header not found"))?
+    .ok_or(HyperDigestError::NoDigestHeader("No content-digest header".to_string()))?
     .to_str()?;
   let indexmap = sfv::Parser::parse_dictionary(content_digest_header.as_bytes())
-    .map_err(|e| anyhow::anyhow!("Failed to parse Content-Digest header: {e}"))?;
-  ensure!(indexmap.len() == 1, "Content-Digest header should have only one value");
+    .map_err(|e| HyperDigestError::InvalidHeaderValue(e.to_string()))?;
+  if indexmap.len() != 1 {
+    return Err(HyperDigestError::InvalidHeaderValue(
+      "Content-Digest header should have only one value".to_string(),
+    ));
+  };
   let (cd_type, cd) = indexmap.iter().next().unwrap();
-  let cd_type = ContentDigestType::from_str(cd_type).map_err(|e| anyhow::anyhow!("Invalid Content-Digest type: {e}"))?;
-  ensure!(
-    matches!(
-      cd,
-      sfv::ListEntry::Item(sfv::Item {
-        bare_item: sfv::BareItem::ByteSeq(_),
-        ..
-      })
-    ),
-    "Invalid Content-Digest value"
-  );
+  let cd_type = ContentDigestType::from_str(cd_type)
+    .map_err(|e| HyperDigestError::InvalidHeaderValue(format!("Invalid Content-Digest type: {e}")))?;
+  if !matches!(
+    cd,
+    sfv::ListEntry::Item(sfv::Item {
+      bare_item: sfv::BareItem::ByteSeq(_),
+      ..
+    })
+  ) {
+    return Err(HyperDigestError::InvalidHeaderValue(
+      "Invalid Content-Digest value".to_string(),
+    ));
+  }
+
   let cd = match cd {
     sfv::ListEntry::Item(sfv::Item {
       bare_item: sfv::BareItem::ByteSeq(cd),

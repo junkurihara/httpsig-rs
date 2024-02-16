@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure};
+use crate::error::{HyperSigError, HyperSigResult};
 use http::Request;
 use http_body::Body;
 use httpsig::prelude::{
@@ -45,7 +45,7 @@ impl<D> RequestMessageSignature for Request<D>
 where
   D: Send + Body + Sync,
 {
-  type Error = anyhow::Error;
+  type Error = HyperSigError;
 
   /// Set the http message signature from given http signature params and signing key
   async fn set_message_signature<T>(
@@ -53,7 +53,7 @@ where
     signature_params: &HttpSignatureParams,
     signing_key: &T,
     signature_name: Option<&str>,
-  ) -> Result<(), Self::Error>
+  ) -> HyperSigResult<()>
   where
     Self: Sized,
     T: SigningKey + Sync,
@@ -75,13 +75,15 @@ where
   /// Return Ok(()) if the signature is valid.
   /// If invalid for the given key or error occurs (like the case where the request does not have signature and/or signature-input headers), return Err.
   /// If key_id is given, it is used to match the key id in signature params
-  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<(), Self::Error>
+  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> HyperSigResult<()>
   where
     Self: Sized,
     T: VerifyingKey + Sync,
   {
     if !self.has_message_signature() {
-      bail!("The request does not have signature and signature-input headers");
+      return Err(HyperSigError::NoSignatureHeaders(
+        "The request does not have signature and signature-input headers".to_string(),
+      ));
     }
 
     let signature_headers_map = extract_signature_headers_with_name(self)?;
@@ -98,21 +100,29 @@ where
     } else {
       signature_headers_map
     };
-    ensure!(!filtered.is_empty(), "No signature for verification");
+    if filtered.is_empty() {
+      return Err(HyperSigError::NoSignatureHeaders(
+        "No signature as appropriate target for verification".to_string(),
+      ));
+    }
 
     // check if any one of the signature headers is valid
     let res = filtered
       .iter()
       .map(|(_, headers)| {
         let signature_base = build_signature_base_from_request(self, headers.signature_params())?;
-        signature_base.verify_signature_headers(verifying_key, headers)
+        signature_base
+          .verify_signature_headers(verifying_key, headers)
+          .map_err(|e| e.into()) as HyperSigResult<()>
       })
       .any(|r| r.is_ok());
 
     if res {
       Ok(())
     } else {
-      bail!("Invalid signature for the verifying ey")
+      Err(HyperSigError::InvalidSignature(
+        "Invalid signature for the verifying key".to_string(),
+      ))
     }
   }
 
@@ -130,8 +140,12 @@ struct SignatureTuple {
   signature: Vec<u8>,
 }
 /// Extract signature and signature-input with signature-name indication from http request
-fn extract_signature_headers_with_name<B>(req: &Request<B>) -> anyhow::Result<IndexMap<String, HttpSignatureHeaders>> {
-  ensure!(req.headers().contains_key("signature-input") && req.headers().contains_key("signature"));
+fn extract_signature_headers_with_name<B>(req: &Request<B>) -> HyperSigResult<IndexMap<String, HttpSignatureHeaders>> {
+  if !(req.headers().contains_key("signature-input") && req.headers().contains_key("signature")) {
+    return Err(HyperSigError::NoSignatureHeaders(
+      "The request does not have signature and signature-input headers".to_string(),
+    ));
+  };
 
   let signature_input_strings = req
     .headers()
@@ -156,46 +170,53 @@ fn extract_signature_headers_with_name<B>(req: &Request<B>) -> anyhow::Result<In
 fn build_signature_base_from_request<B>(
   req: &Request<B>,
   signature_params: &HttpSignatureParams,
-) -> anyhow::Result<HttpSignatureBase> {
+) -> HyperSigResult<HttpSignatureBase> {
   let component_lines = signature_params
     .covered_components
     .iter()
     .map(|component_id| extract_http_message_component_from_request(req, component_id))
     .collect::<Result<Vec<_>, _>>()?;
 
-  HttpSignatureBase::try_new(&component_lines, signature_params)
+  HttpSignatureBase::try_new(&component_lines, signature_params).map_err(|e| e.into())
 }
 
 /// Extract http field from hyper http request
-fn extract_http_field_from_request<B>(req: &Request<B>, id: &HttpMessageComponentId) -> anyhow::Result<HttpMessageComponent> {
+fn extract_http_field_from_request<B>(req: &Request<B>, id: &HttpMessageComponentId) -> HyperSigResult<HttpMessageComponent> {
   let HttpMessageComponentName::HttpField(header_name) = &id.name else {
-    bail!("invalid http message component name as http field");
+    return Err(HyperSigError::InvalidComponentName(
+      "invalid http message component name as http field".to_string(),
+    ));
   };
-  anyhow::ensure!(
-    !id.params.0.contains(&HttpMessageComponentParam::Req),
-    "`req` is not allowed in request"
-  );
+  if id.params.0.contains(&HttpMessageComponentParam::Req) {
+    return Err(HyperSigError::InvalidComponentParam(
+      "`req` is not allowed in request".to_string(),
+    ));
+  }
 
   let field_values = req
     .headers()
     .get_all(header_name)
     .iter()
-    .map(|v| v.to_str().map(|s| s.to_owned()).map_err(|e| anyhow::anyhow!("{e}")))
+    .map(|v| v.to_str().map(|s| s.to_owned()))
     .collect::<Result<Vec<_>, _>>()?;
 
-  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| anyhow::anyhow!("{e}"))
+  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| e.into())
 }
 
 /// Extract derived component from hyper http request
 fn extract_derived_component_from_request<B>(
   req: &Request<B>,
   id: &HttpMessageComponentId,
-) -> Result<HttpMessageComponent, anyhow::Error> {
+) -> HyperSigResult<HttpMessageComponent> {
   let HttpMessageComponentName::Derived(derived_id) = &id.name else {
-    bail!("invalid http message component name as derived component");
+    return Err(HyperSigError::InvalidComponentName(
+      "invalid http message component name as derived component".to_string(),
+    ));
   };
   if !id.params.0.is_empty() {
-    bail!("derived component does not allow parameters for request");
+    return Err(HyperSigError::InvalidComponentParam(
+      "derived component does not allow parameters for request".to_string(),
+    ));
   }
 
   let field_values: Vec<String> = match derived_id {
@@ -225,7 +246,11 @@ fn extract_derived_component_from_request<B>(
         .map(|s| s.to_string())
         .collect::<Vec<_>>()
     }
-    DerivedComponentName::Status => bail!("`status` is only for response"),
+    DerivedComponentName::Status => {
+      return Err(HyperSigError::InvalidComponentName(
+        "`status` is only for response".to_string(),
+      ))
+    }
     DerivedComponentName::SignatureParams => req
       .headers()
       .get_all("signature-input")
@@ -234,7 +259,7 @@ fn extract_derived_component_from_request<B>(
       .collect::<Vec<_>>(),
   };
 
-  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| anyhow::anyhow!("{e}"))
+  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| e.into())
 }
 
 /* --------------------------------------- */
@@ -242,7 +267,7 @@ fn extract_derived_component_from_request<B>(
 fn extract_http_message_component_from_request<B>(
   req: &Request<B>,
   target_component_id: &HttpMessageComponentId,
-) -> Result<HttpMessageComponent, anyhow::Error> {
+) -> HyperSigResult<HttpMessageComponent> {
   match &target_component_id.name {
     HttpMessageComponentName::HttpField(_) => extract_http_field_from_request(req, target_component_id),
     HttpMessageComponentName::Derived(_) => extract_derived_component_from_request(req, target_component_id),
@@ -252,14 +277,15 @@ fn extract_http_message_component_from_request<B>(
 /* --------------------------------------- */
 #[cfg(test)]
 mod tests {
+
   use super::{
-    super::{hyper_content_digest::RequestContentDigest, ContentDigestType},
+    super::{error::HyperDigestError, hyper_content_digest::RequestContentDigest, ContentDigestType},
     *,
   };
   use http_body_util::Full;
   use httpsig::prelude::{PublicKey, SecretKey, SharedKey};
 
-  type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, anyhow::Error>;
+  type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, HyperDigestError>;
 
   const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
@@ -272,7 +298,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
   const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
-  async fn build_request() -> anyhow::Result<Request<BoxBody>> {
+  async fn build_request() -> Request<BoxBody> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
     let req = Request::builder()
       .method("GET")
@@ -282,7 +308,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       .header("content-type", "application/json-patch+json")
       .body(body)
       .unwrap();
-    req.set_content_digest(&ContentDigestType::Sha256).await
+    req.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
   }
 
   fn build_covered_components() -> Vec<HttpMessageComponentId> {
@@ -294,7 +320,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_extract_component_from_request() {
-    let req = build_request().await.unwrap();
+    let req = build_request().await;
 
     let component_id_method = HttpMessageComponentId::try_from("\"@method\"").unwrap();
     let component = extract_http_message_component_from_request(&req, &component_id_method).unwrap();
@@ -321,7 +347,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_extract_signature_params_from_request() {
-    let mut req = build_request().await.unwrap();
+    let mut req = build_request().await;
     let headers = req.headers_mut();
     headers.insert(
       "signature-input",
@@ -338,7 +364,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_build_signature_base_from_request() {
-    let req = build_request().await.unwrap();
+    let req = build_request().await;
 
     const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
     let values = (r##""@method" "content-type" "date" "content-digest""##, SIGPARA);
@@ -357,7 +383,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_extract_tuples_from_request() {
-    let mut req = build_request().await.unwrap();
+    let mut req = build_request().await;
     let headers = req.headers_mut();
     headers.insert(
       "signature-input",
@@ -381,7 +407,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_set_verify_message_signature() {
-    let mut req = build_request().await.unwrap();
+    let mut req = build_request().await;
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
     signature_params.set_key_info(&secret_key);
@@ -398,7 +424,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_set_verify_with_signature_name() {
-    let mut req = build_request().await.unwrap();
+    let mut req = build_request().await;
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
     signature_params.set_key_info(&secret_key);
@@ -419,7 +445,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_set_verify_with_key_id() {
-    let mut req = build_request().await.unwrap();
+    let mut req = build_request().await;
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
     signature_params.set_key_info(&secret_key);
@@ -440,7 +466,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[tokio::test]
   async fn test_set_verify_with_key_id_hmac_sha256() {
-    let mut req = build_request().await.unwrap();
+    let mut req = build_request().await;
     let secret_key = SharedKey::from_base64(HMACSHA256_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
     signature_params.set_key_info(&secret_key);
