@@ -257,7 +257,7 @@ mod tests {
     *,
   };
   use http_body_util::Full;
-  use httpsig::prelude::{PublicKey, SecretKey};
+  use httpsig::prelude::{PublicKey, SecretKey, SharedKey};
 
   type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, anyhow::Error>;
 
@@ -432,6 +432,28 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(verification_res.is_ok());
 
     let verification_res = req.verify_message_signature(&public_key, Some("NotFoundKeyId")).await;
+    assert!(verification_res.is_err());
+  }
+
+  const HMACSHA256_SECRET_KEY: &str =
+    r##"uzvJfB4u3N0Jy4T7NZ75MDVcr8zSTInedJtkgcu46YW4XByzNJjxBdtjUkdJPBtbmHhIDi6pcl8jsasjlTMtDQ=="##;
+
+  #[tokio::test]
+  async fn test_set_verify_with_key_id_hmac_sha256() {
+    let mut req = build_request().await.unwrap();
+    let secret_key = SharedKey::from_base64(HMACSHA256_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+    signature_params.set_key_info(&secret_key);
+    // Random nonce is highly recommended for HMAC
+    signature_params.set_random_nonce();
+
+    req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+
+    let key_id = VerifyingKey::key_id(&secret_key);
+    let verification_res = req.verify_message_signature(&secret_key, Some(&key_id)).await;
+    assert!(verification_res.is_ok());
+
+    let verification_res = req.verify_message_signature(&secret_key, Some("NotFoundKeyId")).await;
     assert!(verification_res.is_err());
   }
 }

@@ -1,5 +1,6 @@
 use super::AlgorithmName;
 use anyhow::Result;
+use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
@@ -11,6 +12,14 @@ type HmacSha256 = Hmac<sha2::Sha256>;
 pub enum SharedKey {
   /// hmac-sha256
   HmacSha256(Vec<u8>),
+}
+
+impl SharedKey {
+  /// Create a new shared key from base64 encoded string
+  pub fn from_base64(key: &str) -> Result<Self> {
+    let key = general_purpose::STANDARD.decode(key)?;
+    Ok(SharedKey::HmacSha256(key))
+  }
 }
 
 impl super::SigningKey for SharedKey {
@@ -49,7 +58,6 @@ impl super::VerifyingKey for SharedKey {
 
   /// Get the key id
   fn key_id(&self) -> String {
-    use base64::{engine::general_purpose, Engine as _};
     match self {
       SharedKey::HmacSha256(key) => {
         let mut hasher = <Sha256 as Digest>::new();
