@@ -4,13 +4,19 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/httpsig-rs"
 repository = "https://github.com/junkurihara/httpsig-rs"
 readme = "README.md"
 license = "MIT"
 rust-version = "1.75.0"
+categories = [
+  "web-programming",
+  "cryptography",
+  "authentication",
+  "network-programming",
+]
 
 [profile.release]
 codegen-units = 1
