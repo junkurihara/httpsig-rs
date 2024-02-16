@@ -1,5 +1,8 @@
 use super::AlgorithmName;
-use crate::error::{HttpSigError, HttpSigResult};
+use crate::{
+  error::{HttpSigError, HttpSigResult},
+  trace::*,
+};
 use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -17,6 +20,7 @@ pub enum SharedKey {
 impl SharedKey {
   /// Create a new shared key from base64 encoded string
   pub fn from_base64(key: &str) -> HttpSigResult<Self> {
+    debug!("Create SharedKey from base64 string");
     let key = general_purpose::STANDARD.decode(key)?;
     Ok(SharedKey::HmacSha256(key))
   }
@@ -27,6 +31,7 @@ impl super::SigningKey for SharedKey {
   fn sign(&self, data: &[u8]) -> HttpSigResult<Vec<u8>> {
     match self {
       SharedKey::HmacSha256(key) => {
+        debug!("Sign HmacSha256");
         let mut mac = HmacSha256::new_from_slice(key).unwrap();
         mac.update(data);
         Ok(mac.finalize().into_bytes().to_vec())
@@ -48,6 +53,7 @@ impl super::VerifyingKey for SharedKey {
   /// Verify the mac
   fn verify(&self, data: &[u8], expected_mac: &[u8]) -> HttpSigResult<()> {
     use super::SigningKey;
+    debug!("Verify HmacSha256");
     let calcurated_mac = self.sign(data)?;
     if calcurated_mac == expected_mac {
       Ok(())

@@ -155,7 +155,7 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
       .map(|v| {
         v.serialize_value()
           .map_err(|e| anyhow::anyhow!("{e}"))
-          .and_then(|v| HttpMessageComponentId::try_from(v.as_str()))
+          .and_then(|v| HttpMessageComponentId::try_from(v.as_str()).map_err(|e| anyhow::anyhow!(e)))
       })
       .collect::<Result<Vec<_>, _>>()?;
     ensure!(

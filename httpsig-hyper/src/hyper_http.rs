@@ -183,7 +183,7 @@ fn extract_http_field_from_request<B>(req: &Request<B>, id: &HttpMessageComponen
     .map(|v| v.to_str().map(|s| s.to_owned()).map_err(|e| anyhow::anyhow!("{e}")))
     .collect::<Result<Vec<_>, _>>()?;
 
-  HttpMessageComponent::try_from((id, field_values.as_slice()))
+  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Extract derived component from hyper http request
@@ -234,7 +234,7 @@ fn extract_derived_component_from_request<B>(
       .collect::<Vec<_>>(),
   };
 
-  HttpMessageComponent::try_from((id, field_values.as_slice()))
+  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /* --------------------------------------- */

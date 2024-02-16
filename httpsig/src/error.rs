@@ -16,14 +16,32 @@ pub enum HttpSigError {
   /// Invalid public key for asymmetric algorithm
   #[error("Failed to parse public key: {0}")]
   ParsePublicKeyError(String),
-
   /// Signature parse error
   #[error("Failed to parse signature: {0}")]
   ParseSignatureError(String),
-
-  // #[error("Failed to verify digest: {0}")]
-  // VerifyDigestError(#[from] ),
   /// Invalid Signature
   #[error("Invalid Signature: {0}")]
   InvalidSignature(String),
+
+  /* ----- Component errors ----- */
+  /// Failed to parse structured field value
+  #[error("Failed to parse structured field value: {0}")]
+  ParseSFVError(String),
+  /// Invalid http message component name
+  #[error("Invalid http message component name: {0}")]
+  InvalidComponentName(String),
+  /// Invalid http message component param
+  #[error("Invalid http message component param: {0}")]
+  InvalidComponentParam(String),
+  /// Invalid http message component id
+  #[error("Invalid http message component id: {0}")]
+  InvalidComponentId(String),
+  /// Invalid http message component
+  #[error("Invalid http message component: {0}")]
+  InvalidComponent(String),
+
+  /* ----- Other errors ----- */
+  /// Others
+  #[error("Others: {0}")]
+  Others(#[from] anyhow::Error),
 }

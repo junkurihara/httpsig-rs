@@ -4,8 +4,10 @@ use super::{
   component_param::{handle_params_key_into, handle_params_sf, HttpMessageComponentParam},
   component_value::HttpMessageComponentValue,
 };
-use crate::trace::*;
-use anyhow::{bail, ensure};
+use crate::{
+  error::{HttpSigError, HttpSigResult},
+  trace::*,
+};
 
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone)]
@@ -18,21 +20,23 @@ pub struct HttpMessageComponent {
 }
 
 impl TryFrom<&str> for HttpMessageComponent {
-  type Error = anyhow::Error;
+  type Error = HttpSigError;
   /// Create HttpMessageComponent from serialized string, i.e., `"<id>": <value>` of lines in the signature base of HTTP header.
   /// We suppose that the value was correctly serialized as a line of signature base.
   fn try_from(val: &str) -> Result<Self, Self::Error> {
     let Some((id, value)) = val.split_once(':') else {
-      bail!("Invalid http message component: {}", val);
+      return Err(HttpSigError::InvalidComponent(format!(
+        "Invalid http message component: {val}"
+      )));
     };
     let id = id.trim();
 
     // check if id is wrapped by double quotations
-    ensure!(
-      id.starts_with('"') && (id.ends_with('"') || id[1..].contains("\";")),
-      "Invalid http message component id: {}",
-      id
-    );
+    if !(id.starts_with('"') && (id.ends_with('"') || id[1..].contains("\";"))) {
+      return Err(HttpSigError::InvalidComponentId(format!(
+        "Invalid http message component id: {id}"
+      )));
+    }
 
     Ok(Self {
       id: HttpMessageComponentId::try_from(id)?,
@@ -42,7 +46,7 @@ impl TryFrom<&str> for HttpMessageComponent {
 }
 
 impl TryFrom<(&HttpMessageComponentId, &[String])> for HttpMessageComponent {
-  type Error = anyhow::Error;
+  type Error = HttpSigError;
 
   /// Build http message component from given id and its associated field values
   fn try_from((id, field_values): (&HttpMessageComponentId, &[String])) -> Result<Self, Self::Error> {
@@ -66,19 +70,28 @@ impl std::fmt::Display for HttpMessageComponent {
 pub(super) fn build_derived_component(
   id: &HttpMessageComponentId,
   field_values: &[String],
-) -> anyhow::Result<HttpMessageComponent> {
+) -> HttpSigResult<HttpMessageComponent> {
   let HttpMessageComponentName::Derived(derived_id) = &id.name else {
-    bail!("invalid http message component name as derived component");
+    return Err(HttpSigError::InvalidComponent(
+      "invalid http message component name as derived component".to_string(),
+    ));
   };
-  ensure!(!field_values.is_empty(), "derived component requires field values");
+  if field_values.is_empty() {
+    return Err(HttpSigError::InvalidComponent(
+      "derived component requires field values".to_string(),
+    ));
+  }
   // ensure only `req` and `name` are allowed for derived component parameters
-  ensure!(
-    id.params
-      .0
-      .iter()
-      .all(|p| matches!(p, HttpMessageComponentParam::Req | HttpMessageComponentParam::Name(_))),
-    "invalid parameter for derived component"
-  );
+  if !id
+    .params
+    .0
+    .iter()
+    .all(|p| matches!(p, HttpMessageComponentParam::Req | HttpMessageComponentParam::Name(_)))
+  {
+    return Err(HttpSigError::InvalidComponent(
+      "invalid parameter for derived component".to_string(),
+    ));
+  }
 
   let value = match derived_id {
     DerivedComponentName::Method => HttpMessageComponentValue::from(field_values[0].to_ascii_uppercase().as_ref()),
@@ -94,7 +107,11 @@ pub(super) fn build_derived_component(
         HttpMessageComponentParam::Name(name) => Some(name),
         _ => None,
       });
-      ensure!(name.is_some(), "query-param derived component requires name parameter");
+      if name.is_none() {
+        return Err(HttpSigError::InvalidComponent(
+          "query-param derived component requires name parameter".to_string(),
+        ));
+      };
       let name = name.unwrap();
       let kvs = field_values
         .iter()
@@ -108,7 +125,11 @@ pub(super) fn build_derived_component(
     DerivedComponentName::SignatureParams => {
       let value = field_values[0].to_string();
       let opt_pair = value.trim().split_once('=');
-      ensure!(opt_pair.is_some(), "invalid signature-params derived component");
+      if opt_pair.is_none() {
+        return Err(HttpSigError::InvalidComponent(
+          "invalid signature-params derived component".to_string(),
+        ));
+      }
       let (key, value) = opt_pair.unwrap();
       HttpMessageComponentValue::from((key, value))
     }
@@ -123,7 +144,7 @@ pub(super) fn build_derived_component(
 pub(super) fn build_http_field_component(
   id: &HttpMessageComponentId,
   field_values: &[String],
-) -> anyhow::Result<HttpMessageComponent> {
+) -> HttpSigResult<HttpMessageComponent> {
   let mut field_values = field_values.to_vec();
   let params = &id.params;
 
@@ -135,12 +156,16 @@ pub(super) fn build_http_field_component(
       HttpMessageComponentParam::Key(key) => {
         field_values = handle_params_key_into(&field_values, key)?;
       }
-      HttpMessageComponentParam::Bs => bail!("`bs` is not supported yet"),
+      HttpMessageComponentParam::Bs => {
+        return Err(anyhow::anyhow!("`bs` is not supported yet").into());
+      }
       HttpMessageComponentParam::Req => {
         debug!("`req` is given for http field component");
       }
-      HttpMessageComponentParam::Tr => bail!("`tr` is not supported yet"),
-      HttpMessageComponentParam::Name(_) => bail!("`name` is only for derived component query-params"),
+      HttpMessageComponentParam::Tr => return Err(anyhow::anyhow!("`tr` is not supported yet").into()),
+      HttpMessageComponentParam::Name(_) => {
+        return Err(anyhow::anyhow!("`name` is only for derived component query-params").into());
+      }
     }
   }
 

@@ -62,11 +62,13 @@ impl SecretKey {
           .private_key;
         match param.to_string().as_ref() {
           params_oids::Secp256r1 => {
+            debug!("Read P256 private key");
             let sk =
               p256::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
             Ok(Self::EcdsaP256Sha256(sk))
           }
           params_oids::Secp384r1 => {
+            debug!("Read P384 private key");
             let sk =
               p384::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
             Ok(Self::EcdsaP384Sha384(sk))
@@ -112,6 +114,7 @@ impl super::SigningKey for SecretKey {
   fn sign(&self, data: &[u8]) -> HttpSigResult<Vec<u8>> {
     match &self {
       Self::EcdsaP256Sha256(sk) => {
+        debug!("Sign EcdsaP256Sha256");
         let sk = ecdsa::SigningKey::from(sk);
         let mut digest = <Sha256 as Digest>::new();
         digest.update(data);
@@ -119,6 +122,7 @@ impl super::SigningKey for SecretKey {
         Ok(sig.to_bytes().to_vec())
       }
       Self::EcdsaP384Sha384(sk) => {
+        debug!("Sign EcdsaP384Sha384");
         let sk = ecdsa::SigningKey::from(sk);
         let mut digest = <Sha384 as Digest>::new();
         digest.update(data);
@@ -126,6 +130,7 @@ impl super::SigningKey for SecretKey {
         Ok(sig.to_bytes().to_vec())
       }
       Self::Ed25519(sk) => {
+        debug!("Sign Ed25519");
         let sig = sk.sign(data, Some(ed25519_compact::Noise::default()));
         Ok(sig.as_ref().to_vec())
       }
@@ -183,6 +188,7 @@ impl PublicKey {
     match spki_ref.algorithm.oid.to_string().as_ref() {
       // ec
       algorithm_oids::EC => {
+        debug!("Read EC public key");
         let param = spki_ref
           .algorithm
           .parameters_oid()
@@ -193,11 +199,13 @@ impl PublicKey {
           .ok_or(HttpSigError::ParsePublicKeyError("Invalid public key".to_string()))?;
         match param.to_string().as_ref() {
           params_oids::Secp256r1 => {
+            debug!("Read P256 public key");
             let pk = EcPublicKey::<NistP256>::from_sec1_bytes(public_key)
               .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
             Ok(Self::EcdsaP256Sha256(pk))
           }
           params_oids::Secp384r1 => {
+            debug!("Read P384 public key");
             let pk = EcPublicKey::<NistP384>::from_sec1_bytes(public_key)
               .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
             Ok(Self::EcdsaP384Sha384(pk))
@@ -207,6 +215,7 @@ impl PublicKey {
       }
       // ed25519
       algorithm_oids::Ed25519 => {
+        debug!("Read Ed25519 public key");
         let public_key = spki_ref
           .subject_public_key
           .as_bytes()
@@ -227,6 +236,7 @@ impl super::VerifyingKey for PublicKey {
   fn verify(&self, data: &[u8], signature: &[u8]) -> HttpSigResult<()> {
     match self {
       Self::EcdsaP256Sha256(pk) => {
+        debug!("Verify EcdsaP256Sha256");
         let signature = ecdsa::Signature::<NistP256>::from_bytes(signature.into())
           .map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
         let vk = ecdsa::VerifyingKey::from(pk);
@@ -236,6 +246,7 @@ impl super::VerifyingKey for PublicKey {
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
       Self::EcdsaP384Sha384(pk) => {
+        debug!("Verify EcdsaP384Sha384");
         let signature = ecdsa::Signature::<NistP384>::from_bytes(signature.into())
           .map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
         let vk = ecdsa::VerifyingKey::from(pk);
@@ -245,6 +256,7 @@ impl super::VerifyingKey for PublicKey {
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
       Self::Ed25519(pk) => {
+        debug!("Verify Ed25519");
         let sig =
           ed25519_compact::Signature::from_slice(signature).map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
         pk.verify(data, &sig)

@@ -2,7 +2,7 @@ use super::{
   component_name::{DerivedComponentName, HttpMessageComponentName},
   component_param::{HttpMessageComponentParam, HttpMessageComponentParams},
 };
-use anyhow::ensure;
+use crate::error::{HttpSigError, HttpSigResult};
 use sfv::Parser;
 
 /* ---------------------------------------------------------------- */
@@ -29,17 +29,17 @@ impl std::fmt::Display for HttpMessageComponentId {
 }
 
 impl TryFrom<&str> for HttpMessageComponentId {
-  type Error = anyhow::Error;
+  type Error = HttpSigError;
   /// Parse http message component id from string
   /// Accept `"<name>";<params>` or `"<name>"` (with double quotations).
   /// But accept string in the form of `<name>` (without double quotations) when no param is given
-  fn try_from(val: &str) -> std::result::Result<Self, Self::Error> {
+  fn try_from(val: &str) -> HttpSigResult<Self> {
     let val = val.trim();
     let item = if !val.starts_with('"') && !val.ends_with('"') && !val.is_empty() && !val.contains('"') {
       // maybe insufficient, but it's enough for now
-      Parser::parse_item(format!("\"{val}\"").as_bytes()).map_err(|e| anyhow::anyhow!(e))?
+      Parser::parse_item(format!("\"{val}\"").as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
     } else {
-      Parser::parse_item(val.as_bytes()).map_err(|e| anyhow::anyhow!(e))?
+      Parser::parse_item(val.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
     };
 
     let res = Self {
@@ -48,12 +48,12 @@ impl TryFrom<&str> for HttpMessageComponentId {
     };
 
     // assert for query param
-    if res.params.0.iter().any(|v| matches!(v, &HttpMessageComponentParam::Name(_))) {
-      ensure!(
-        matches!(res.name, HttpMessageComponentName::Derived(DerivedComponentName::QueryParam)),
-        "Invalid http message component id: {}",
-        res
-      );
+    if res.params.0.iter().any(|v| matches!(v, &HttpMessageComponentParam::Name(_)))
+      && !matches!(res.name, HttpMessageComponentName::Derived(DerivedComponentName::QueryParam))
+    {
+      return Err(HttpSigError::InvalidComponentId(format!(
+        "Invalid http message component id: {res}"
+      )));
     }
 
     // assert for http field components
@@ -63,12 +63,11 @@ impl TryFrom<&str> for HttpMessageComponentId {
         || matches!(v, &HttpMessageComponentParam::Sf)
         || matches!(v, &HttpMessageComponentParam::Tr)
         || matches!(v, &HttpMessageComponentParam::Key(_))
-    }) {
-      ensure!(
-        matches!(res.name, HttpMessageComponentName::HttpField(_)),
-        "Invalid http message component id: {}",
-        res
-      );
+    }) && !matches!(res.name, HttpMessageComponentName::HttpField(_))
+    {
+      return Err(HttpSigError::InvalidComponentId(format!(
+        "Invalid http message component id: {res}"
+      )));
     }
 
     Ok(res)
