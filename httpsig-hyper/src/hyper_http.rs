@@ -5,11 +5,9 @@ use httpsig::prelude::{
   message_component::{
     DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName, HttpMessageComponentParam,
   },
-  HttpSignatureBase, HttpSignatureHeaders, HttpSignatureParams, SigningKey, VerifyingKey,
+  HttpSignatureBase, HttpSignatureHeaders, HttpSignatureHeadersMap, HttpSignatureParams, SigningKey, VerifyingKey,
 };
 use std::future::Future;
-
-type IndexMap<K, V> = indexmap::IndexMap<K, V, fxhash::FxBuildHasher>;
 
 /* --------------------------------------- */
 /// A trait to set the http message signature from given http signature params
@@ -90,13 +88,7 @@ where
 
     // filter by key_id if given
     let filtered = if let Some(key_id) = key_id {
-      signature_headers_map
-        .into_iter()
-        .filter(|tuple| {
-          let params_keyid = tuple.1.signature_params().keyid.as_ref();
-          params_keyid.is_some() && params_keyid.unwrap() == key_id
-        })
-        .collect::<IndexMap<_, _>>()
+      filter_signature_headers_map_by_keyid(&signature_headers_map, key_id)
     } else {
       signature_headers_map
     };
@@ -133,14 +125,23 @@ where
 }
 
 /* --------------------------------------- */
-#[allow(unused)]
-struct SignatureTuple {
-  name: String,
-  signature_params: HttpSignatureParams,
-  signature: Vec<u8>,
+/// Filter HttpSignatureHeadersMap by keyid
+fn filter_signature_headers_map_by_keyid(
+  signature_headers_map: &HttpSignatureHeadersMap,
+  key_id: &str,
+) -> HttpSignatureHeadersMap {
+  signature_headers_map
+    .iter()
+    .filter(|(_, headers)| {
+      let params_keyid = headers.signature_params().keyid.as_ref();
+      params_keyid.is_some() && params_keyid.unwrap() == key_id
+    })
+    .map(|(k, v)| (k.to_string(), v.clone()))
+    .collect::<HttpSignatureHeadersMap>()
 }
+
 /// Extract signature and signature-input with signature-name indication from http request
-fn extract_signature_headers_with_name<B>(req: &Request<B>) -> HyperSigResult<IndexMap<String, HttpSignatureHeaders>> {
+fn extract_signature_headers_with_name<B>(req: &Request<B>) -> HyperSigResult<HttpSignatureHeadersMap> {
   if !(req.headers().contains_key("signature-input") && req.headers().contains_key("signature")) {
     return Err(HyperSigError::NoSignatureHeaders(
       "The request does not have signature and signature-input headers".to_string(),

@@ -10,7 +10,8 @@ use fxhash::FxBuildHasher;
 use indexmap::IndexMap;
 use sfv::{BareItem, Item, ListEntry, Parser};
 
-type HttpSignatureHeadersMap = IndexMap<String, HttpSignatureHeaders, FxBuildHasher>;
+/// IndexMap of signature name and HttpSignatureHeaders
+pub type HttpSignatureHeadersMap = IndexMap<String, HttpSignatureHeaders, FxBuildHasher>;
 
 /// Default signature name used to indicate signature in http header (`signature` and `signature-input`)
 const DEFAULT_SIGNATURE_NAME: &str = "sig";
