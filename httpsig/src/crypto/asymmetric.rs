@@ -44,50 +44,57 @@ pub enum SecretKey {
 }
 
 impl SecretKey {
+  /// from plain bytes
+  pub fn from_bytes(alg: AlgorithmName, bytes: &[u8]) -> HttpSigResult<Self> {
+    match alg {
+      AlgorithmName::EcdsaP256Sha256 => {
+        debug!("Read P256 private key");
+        let sk = EcSecretKey::from_bytes(bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
+        Ok(Self::EcdsaP256Sha256(sk))
+      }
+      AlgorithmName::EcdsaP384Sha384 => {
+        debug!("Read P384 private key");
+        let sk = EcSecretKey::from_bytes(bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
+        Ok(Self::EcdsaP384Sha384(sk))
+      }
+      AlgorithmName::Ed25519 => {
+        debug!("Read Ed25519 private key");
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(bytes);
+        let sk = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed)).sk;
+        Ok(Self::Ed25519(sk))
+      }
+      _ => Err(HttpSigError::ParsePrivateKeyError("Unsupported algorithm".to_string())),
+    }
+  }
   /// parse der
   /// Derive secret key from der bytes
   pub fn from_der(der: &[u8]) -> HttpSigResult<Self> {
     let pki = PrivateKeyInfo::from_der(der).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
 
-    match pki.algorithm.oid.to_string().as_ref() {
+    let (algorithm_name, sk_bytes) = match pki.algorithm.oid.to_string().as_ref() {
       // ec
       algorithm_oids::EC => {
-        debug!("Read EC private key");
         let param = pki
           .algorithm
           .parameters_oid()
           .map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
+        let algorithm_name = match param.to_string().as_ref() {
+          params_oids::Secp256r1 => AlgorithmName::EcdsaP256Sha256,
+          params_oids::Secp384r1 => AlgorithmName::EcdsaP384Sha384,
+          _ => return Err(HttpSigError::ParsePrivateKeyError("Unsupported curve".to_string())),
+        };
         let sk_bytes = sec1::EcPrivateKey::try_from(pki.private_key)
           .map_err(|e| HttpSigError::ParsePrivateKeyError(format!("Error decoding EcPrivateKey: {e}")))?
           .private_key;
-        match param.to_string().as_ref() {
-          params_oids::Secp256r1 => {
-            debug!("Read P256 private key");
-            let sk =
-              p256::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
-            Ok(Self::EcdsaP256Sha256(sk))
-          }
-          params_oids::Secp384r1 => {
-            debug!("Read P384 private key");
-            let sk =
-              p384::SecretKey::from_bytes(sk_bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
-            Ok(Self::EcdsaP384Sha384(sk))
-          }
-          _ => Err(HttpSigError::ParsePrivateKeyError("Unsupported curve".to_string())),
-        }
+        (algorithm_name, sk_bytes)
       }
       // ed25519
-      algorithm_oids::Ed25519 => {
-        debug!("Read Ed25519 private key");
-        let mut seed = [0u8; 32];
-        seed.copy_from_slice(&pki.private_key[2..]);
-        let sk = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed)).sk;
-        Ok(Self::Ed25519(sk))
-      }
-      _ => Err(HttpSigError::ParsePrivateKeyError(
-        "Unsupported algorithm that supports PEM format keys".to_string(),
-      )),
-    }
+      algorithm_oids::Ed25519 => (AlgorithmName::Ed25519, &pki.private_key[2..]),
+      _ => return Err(HttpSigError::ParsePrivateKeyError("Unsupported algorithm".to_string())),
+    };
+    let sk = Self::from_bytes(algorithm_name, sk_bytes)?;
+    Ok(sk)
   }
 
   /// Derive secret key from pem string
@@ -175,6 +182,28 @@ pub enum PublicKey {
 }
 
 impl PublicKey {
+  /// from plain bytes
+  pub fn from_bytes(alg: AlgorithmName, bytes: &[u8]) -> HttpSigResult<Self> {
+    match alg {
+      AlgorithmName::EcdsaP256Sha256 => {
+        debug!("Read P256 public key");
+        let pk = EcPublicKey::from_sec1_bytes(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
+        Ok(Self::EcdsaP256Sha256(pk))
+      }
+      AlgorithmName::EcdsaP384Sha384 => {
+        debug!("Read P384 public key");
+        let pk = EcPublicKey::from_sec1_bytes(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
+        Ok(Self::EcdsaP384Sha384(pk))
+      }
+      AlgorithmName::Ed25519 => {
+        debug!("Read Ed25519 public key");
+        let pk = ed25519_compact::PublicKey::from_slice(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
+        Ok(Self::Ed25519(pk))
+      }
+      _ => Err(HttpSigError::ParsePublicKeyError("Unsupported algorithm".to_string())),
+    }
+  }
+
   #[allow(dead_code)]
   /// Convert from pem string
   pub fn from_pem(pem: &str) -> HttpSigResult<Self> {
@@ -185,49 +214,36 @@ impl PublicKey {
 
     let spki_ref = SubjectPublicKeyInfoRef::from_der(doc.as_bytes())
       .map_err(|e| HttpSigError::ParsePublicKeyError(format!("Error decoding SubjectPublicKeyInfo: {e}").to_string()))?;
-    match spki_ref.algorithm.oid.to_string().as_ref() {
+
+    let (algorithm_name, pk_bytes) = match spki_ref.algorithm.oid.to_string().as_ref() {
       // ec
       algorithm_oids::EC => {
-        debug!("Read EC public key");
         let param = spki_ref
           .algorithm
           .parameters_oid()
           .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
-        let public_key = spki_ref
+        let algorithm_name = match param.to_string().as_ref() {
+          params_oids::Secp256r1 => AlgorithmName::EcdsaP256Sha256,
+          params_oids::Secp384r1 => AlgorithmName::EcdsaP384Sha384,
+          _ => return Err(HttpSigError::ParsePublicKeyError("Unsupported curve".to_string())),
+        };
+        let pk_bytes = spki_ref
           .subject_public_key
           .as_bytes()
           .ok_or(HttpSigError::ParsePublicKeyError("Invalid public key".to_string()))?;
-        match param.to_string().as_ref() {
-          params_oids::Secp256r1 => {
-            debug!("Read P256 public key");
-            let pk = EcPublicKey::<NistP256>::from_sec1_bytes(public_key)
-              .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
-            Ok(Self::EcdsaP256Sha256(pk))
-          }
-          params_oids::Secp384r1 => {
-            debug!("Read P384 public key");
-            let pk = EcPublicKey::<NistP384>::from_sec1_bytes(public_key)
-              .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
-            Ok(Self::EcdsaP384Sha384(pk))
-          }
-          _ => Err(HttpSigError::ParsePublicKeyError("Unsupported curve".to_string())),
-        }
+        (algorithm_name, pk_bytes)
       }
       // ed25519
-      algorithm_oids::Ed25519 => {
-        debug!("Read Ed25519 public key");
-        let public_key = spki_ref
+      algorithm_oids::Ed25519 => (
+        AlgorithmName::Ed25519,
+        spki_ref
           .subject_public_key
           .as_bytes()
-          .ok_or(HttpSigError::ParsePublicKeyError("Invalid public key".to_string()))?;
-        let pk =
-          ed25519_compact::PublicKey::from_slice(public_key).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
-        Ok(Self::Ed25519(pk))
-      }
-      _ => Err(HttpSigError::ParsePublicKeyError(
-        "Unsupported algorithm that supports PEM format keys".to_string(),
-      )),
-    }
+          .ok_or(HttpSigError::ParsePublicKeyError("Invalid public key".to_string()))?,
+      ),
+      _ => return Err(HttpSigError::ParsePublicKeyError("Unsupported algorithm".to_string())),
+    };
+    Self::from_bytes(algorithm_name, pk_bytes)
   }
 }
 
@@ -292,6 +308,8 @@ impl super::VerifyingKey for PublicKey {
 
 #[cfg(test)]
 mod tests {
+  use p256::elliptic_curve::group::GroupEncoding;
+
   use super::*;
   use std::matches;
 
@@ -328,6 +346,25 @@ MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 -----END PUBLIC KEY-----
 "##;
+
+  #[test]
+  fn test_from_bytes() {
+    let ed25519_kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::default());
+    let ed25519_sk = ed25519_kp.sk.seed().to_vec();
+    let ed25519_pk = ed25519_kp.pk.as_ref();
+    let sk = SecretKey::from_bytes(AlgorithmName::Ed25519, &ed25519_sk).unwrap();
+    assert!(matches!(sk, SecretKey::Ed25519(_)));
+    let pk = PublicKey::from_bytes(AlgorithmName::Ed25519, ed25519_pk).unwrap();
+    assert!(matches!(pk, PublicKey::Ed25519(_)));
+
+    let es256_sk = p256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+    let es256_pk = es256_sk.verifying_key();
+    let sk = SecretKey::from_bytes(AlgorithmName::EcdsaP256Sha256, es256_sk.to_bytes().as_ref()).unwrap();
+    assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
+    let pk_bytes = es256_pk.as_affine().to_bytes();
+    let pk = PublicKey::from_bytes(AlgorithmName::EcdsaP256Sha256, pk_bytes.as_slice()).unwrap();
+    assert!(matches!(pk, PublicKey::EcdsaP256Sha256(_)));
+  }
 
   #[test]
   fn test_from_pem() {
