@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 type HmacSha256 = Hmac<sha2::Sha256>;
 
 /* -------------------------------- */
+#[derive(Debug, Clone)]
 /// Shared key for http signature
 /// Name conventions follow [Section 6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum SharedKey {

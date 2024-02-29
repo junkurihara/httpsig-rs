@@ -32,6 +32,7 @@ mod params_oids {
 }
 
 /* -------------------------------- */
+#[derive(Debug, Clone)]
 /// Secret key for http signature
 /// Name conventions follow [Section-6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum SecretKey {
@@ -170,6 +171,7 @@ impl super::VerifyingKey for SecretKey {
 }
 
 /* -------------------------------- */
+#[derive(Debug, Clone)]
 /// Public key for http signature, only for asymmetric algorithm
 /// Name conventions follow [Section 6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum PublicKey {
