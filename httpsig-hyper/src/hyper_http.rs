@@ -41,6 +41,9 @@ pub trait RequestMessageSignature {
   /// Extract all key ids for signature bases contained in the request headers
   fn get_key_ids(&self) -> Result<Vec<String>, Self::Error>;
 
+  /// Extract all signature params used to generate signature bases contained in the request headers
+  fn get_signature_params(&self) -> Result<Vec<HttpSignatureParams>, Self::Error>;
+
   /// Extract all signature bases contained in the request headers
   fn extract_signatures(&self) -> Result<Vec<(HttpSignatureBase, HttpSignatureHeaders)>, Self::Error>;
 }
@@ -130,6 +133,16 @@ where
     let res = signature_headers_map
       .iter()
       .filter_map(|(_, headers)| headers.signature_params().keyid.clone())
+      .collect::<Vec<_>>();
+    Ok(res)
+  }
+
+  /// Extract all signature params used to generate signature bases contained in the request headers
+  fn get_signature_params(&self) -> Result<Vec<HttpSignatureParams>, Self::Error> {
+    let signature_headers_map = extract_signature_headers_with_name(self)?;
+    let res = signature_headers_map
+      .iter()
+      .map(|(_, headers)| headers.signature_params().clone())
       .collect::<Vec<_>>();
     Ok(res)
   }
