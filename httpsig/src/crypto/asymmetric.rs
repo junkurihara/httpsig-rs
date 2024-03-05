@@ -295,7 +295,7 @@ impl super::VerifyingKey for PublicKey {
     let mut hasher = <Sha256 as Digest>::new();
     hasher.update(&bytes);
     let hash = hasher.finalize();
-    general_purpose::URL_SAFE_NO_PAD.encode(hash)
+    general_purpose::STANDARD.encode(hash)
   }
 
   /// Get the algorithm name
@@ -417,17 +417,17 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let sk = SecretKey::from_pem(P256_SECERT_KEY)?;
     let pk = PublicKey::from_pem(P256_PUBLIC_KEY)?;
     assert_eq!(sk.public_key().key_id(), pk.key_id());
-    assert_eq!(pk.key_id(), "k34r3Nqfak67bhJSXTjTRo5tCIr1Bsre1cPoJ3LJ9xE");
+    assert_eq!(pk.key_id(), "k34r3Nqfak67bhJSXTjTRo5tCIr1Bsre1cPoJ3LJ9xE=");
 
     let sk = SecretKey::from_pem(P384_SECERT_KEY)?;
     let pk = PublicKey::from_pem(P384_PUBLIC_KEY)?;
     assert_eq!(sk.public_key().key_id(), pk.key_id());
-    assert_eq!(pk.key_id(), "JluSJKLaQsbGcgg1Ves4FfP_Kf7qS11RT88TvU0eNSo");
+    assert_eq!(pk.key_id(), "JluSJKLaQsbGcgg1Ves4FfP/Kf7qS11RT88TvU0eNSo=");
 
     let sk = SecretKey::from_pem(EDDSA_SECRET_KEY)?;
     let pk = PublicKey::from_pem(EDDSA_PUBLIC_KEY)?;
     assert_eq!(sk.public_key().key_id(), pk.key_id());
-    assert_eq!(pk.key_id(), "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is");
+    assert_eq!(pk.key_id(), "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
     Ok(())
   }
 }

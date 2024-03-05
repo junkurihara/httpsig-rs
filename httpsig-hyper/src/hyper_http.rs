@@ -37,6 +37,12 @@ pub trait RequestMessageSignature {
 
   /// Check if the request has signature and signature-input headers
   fn has_message_signature(&self) -> bool;
+
+  /// Extract all key ids for signature bases contained in the request headers
+  fn get_key_ids(&self) -> Result<Vec<String>, Self::Error>;
+
+  /// Extract all signature bases contained in the request headers
+  fn extract_signatures(&self) -> Result<Vec<(HttpSignatureBase, HttpSignatureHeaders)>, Self::Error>;
 }
 
 impl<D> RequestMessageSignature for Request<D>
@@ -84,13 +90,14 @@ where
       ));
     }
 
-    let signature_headers_map = extract_signature_headers_with_name(self)?;
-
-    // filter by key_id if given
+    let vec_signature_with_base = self.extract_signatures()?;
     let filtered = if let Some(key_id) = key_id {
-      filter_signature_headers_map_by_keyid(&signature_headers_map, key_id)
+      vec_signature_with_base
+        .iter()
+        .filter(|(base, _)| base.keyid() == Some(key_id))
+        .collect::<Vec<_>>()
     } else {
-      signature_headers_map
+      vec_signature_with_base.iter().collect()
     };
     if filtered.is_empty() {
       return Err(HyperSigError::NoSignatureHeaders(
@@ -101,13 +108,7 @@ where
     // check if any one of the signature headers is valid
     let res = filtered
       .iter()
-      .map(|(_, headers)| {
-        let signature_base = build_signature_base_from_request(self, headers.signature_params())?;
-        signature_base
-          .verify_signature_headers(verifying_key, headers)
-          .map_err(|e| e.into()) as HyperSigResult<()>
-      })
-      .any(|r| r.is_ok());
+      .any(|(base, headers)| base.verify_signature_headers(verifying_key, headers).is_ok());
 
     if res {
       Ok(())
@@ -122,23 +123,33 @@ where
   fn has_message_signature(&self) -> bool {
     self.headers().contains_key("signature") && self.headers().contains_key("signature-input")
   }
+
+  /// Extract all signature bases contained in the request headers
+  fn get_key_ids(&self) -> HyperSigResult<Vec<String>> {
+    let signature_headers_map = extract_signature_headers_with_name(self)?;
+    let res = signature_headers_map
+      .iter()
+      .filter_map(|(_, headers)| headers.signature_params().keyid.clone())
+      .collect::<Vec<_>>();
+    Ok(res)
+  }
+
+  /// Extract all signature bases contained in the request headers
+  fn extract_signatures(&self) -> Result<Vec<(HttpSignatureBase, HttpSignatureHeaders)>, Self::Error> {
+    let signature_headers_map = extract_signature_headers_with_name(self)?;
+    let extracted = signature_headers_map
+      .iter()
+      .filter_map(|(_, headers)| {
+        build_signature_base_from_request(self, headers.signature_params())
+          .ok()
+          .map(|base| (base, headers.clone()))
+      })
+      .collect::<Vec<_>>();
+    Ok(extracted)
+  }
 }
 
 /* --------------------------------------- */
-/// Filter HttpSignatureHeadersMap by keyid
-fn filter_signature_headers_map_by_keyid(
-  signature_headers_map: &HttpSignatureHeadersMap,
-  key_id: &str,
-) -> HttpSignatureHeadersMap {
-  signature_headers_map
-    .iter()
-    .filter(|(_, headers)| {
-      let params_keyid = headers.signature_params().keyid.as_ref();
-      params_keyid.is_some() && params_keyid.unwrap() == key_id
-    })
-    .map(|(k, v)| (k.to_string(), v.clone()))
-    .collect::<HttpSignatureHeadersMap>()
-}
 
 /// Extract signature and signature-input with signature-name indication from http request
 fn extract_signature_headers_with_name<B>(req: &Request<B>) -> HyperSigResult<HttpSignatureHeadersMap> {
@@ -296,7 +307,7 @@ MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 -----END PUBLIC KEY-----
 "##;
-  // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
+  // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=";
   const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
   async fn build_request() -> Request<BoxBody> {
@@ -367,7 +378,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   async fn test_build_signature_base_from_request() {
     let req = build_request().await;
 
-    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
+    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
     let values = (r##""@method" "content-type" "date" "content-digest""##, SIGPARA);
     let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 
@@ -378,7 +389,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 "content-type": application/json, application/json-patch+json
 "date": Sun, 09 May 2021 18:30:00 GMT
 "content-digest": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
-"@signature-params": ("@method" "content-type" "date" "content-digest");created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##
+"@signature-params": ("@method" "content-type" "date" "content-digest");created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##
     );
   }
 
@@ -482,5 +493,18 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     let verification_res = req.verify_message_signature(&secret_key, Some("NotFoundKeyId")).await;
     assert!(verification_res.is_err());
+  }
+
+  #[tokio::test]
+  async fn test_get_key_ids() {
+    let mut req = build_request().await;
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+    let key_ids = req.get_key_ids().unwrap();
+    assert_eq!(key_ids.len(), 1);
+    assert_eq!(key_ids[0], "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
   }
 }

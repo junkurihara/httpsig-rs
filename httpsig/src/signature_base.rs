@@ -2,7 +2,7 @@ use crate::{
   crypto::SigningKey,
   error::{HttpSigError, HttpSigResult},
   message_component::HttpMessageComponent,
-  prelude::VerifyingKey,
+  prelude::{message_component::HttpMessageComponentId, VerifyingKey},
   signature_params::HttpSignatureParams,
 };
 use base64::{engine::general_purpose, Engine as _};
@@ -200,6 +200,26 @@ impl HttpSignatureBase {
     let signature_bytes = signature_headers.signature.0.as_slice();
     verifying_key.verify(&self.as_bytes(), signature_bytes)
   }
+
+  /// Get key id from signature params
+  pub fn keyid(&self) -> Option<&str> {
+    self.signature_params.keyid.as_deref()
+  }
+
+  /// Get algorithm from signature params
+  pub fn alg(&self) -> Option<&str> {
+    self.signature_params.alg.as_deref()
+  }
+
+  /// Get nonce from signature params
+  pub fn nonce(&self) -> Option<&str> {
+    self.signature_params.nonce.as_deref()
+  }
+
+  /// Get covered components from signature params
+  pub fn covered_components(&self) -> &[HttpMessageComponentId] {
+    &self.signature_params.covered_components
+  }
 }
 
 impl std::fmt::Display for HttpSignatureBase {
@@ -229,7 +249,7 @@ mod test {
   /// こんな感じでSignatureBaseをParamsとかComponentLinesから直接作るのは避ける。
   #[test]
   fn test_signature_base_directly_instantiated() {
-    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
+    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
     let values = (r##""@method" "@path" "date" "content-digest""##, SIGPARA);
     let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 

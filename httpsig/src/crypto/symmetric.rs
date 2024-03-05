@@ -70,7 +70,7 @@ impl super::VerifyingKey for SharedKey {
         let mut hasher = <Sha256 as Digest>::new();
         hasher.update(key);
         let hash = hasher.finalize();
-        general_purpose::URL_SAFE_NO_PAD.encode(hash)
+        general_purpose::STANDARD.encode(hash)
       }
     }
   }

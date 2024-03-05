@@ -97,7 +97,7 @@ impl HttpSignatureParams {
   pub fn set_random_nonce(&mut self) -> &mut Self {
     let mut rng = rand::thread_rng();
     let nonce = rng.gen::<[u8; 32]>();
-    self.nonce = Some(general_purpose::URL_SAFE_NO_PAD.encode(nonce));
+    self.nonce = Some(general_purpose::STANDARD.encode(nonce));
     self
   }
 
@@ -221,7 +221,7 @@ MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 -----END PUBLIC KEY-----
 "##;
-  const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
+  const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=";
 
   fn build_covered_components() -> Vec<HttpMessageComponentId> {
     vec![
@@ -282,7 +282,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[test]
   fn test_from_string_signature_params() {
-    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is""##;
+    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
     let values = vec![
       (
         r##""@method" "@path" "@scheme";req "@authority" "content-type";bs "date" "content-length""##,
