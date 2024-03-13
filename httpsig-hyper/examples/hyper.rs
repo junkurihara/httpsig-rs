@@ -3,6 +3,7 @@ use http_body_util::Full;
 use httpsig_hyper::{prelude::*, *};
 
 type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, HyperDigestError>;
+type SignatureName = String;
 
 const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
@@ -75,7 +76,7 @@ async fn sender_hs256(req: &mut Request<BoxBody>) {
 }
 
 /// Receiver function that verifies a request with a signature of ed25519
-async fn receiver_ed25519<B>(req: &Request<B>) -> HyperSigResult<()>
+async fn receiver_ed25519<B>(req: &Request<B>) -> HyperSigResult<SignatureName>
 where
   B: http_body::Body + Send + Sync,
 {
@@ -88,7 +89,7 @@ where
 }
 
 /// Receiver function that verifies a request with a signature of hmac-sha256
-async fn receiver_hmac_sha256<B>(req: &Request<B>) -> HyperSigResult<()>
+async fn receiver_hmac_sha256<B>(req: &Request<B>) -> HyperSigResult<SignatureName>
 where
   B: http_body::Body + Send + Sync,
 {

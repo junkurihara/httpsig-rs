@@ -20,6 +20,7 @@ use http::Request;
 use http_body_util::Full;
 use httpsig_hyper::{prelude::*, *};
 
+type SignatureName = String;
 const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
 
 /// Signer function that generates a request with a signature
@@ -42,7 +43,7 @@ async fn signer<B>(&mut req: Request<B>) -> HttpSigResult<()> {
 }
 
 /// Validation function that verifies a request with a signature
-async fn verifier<B>(req: &Request<B>) -> HttpSigResult<()> {
+async fn verifier<B>(req: &Request<B>) -> HttpSigResult<SignatureName> {
   let public_key = PublicKey::from_pem(PUBLIC_KEY_STRING).unwrap();
   let key_id = public_key.key_id();
 

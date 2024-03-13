@@ -7,7 +7,13 @@ use httpsig::prelude::{
   },
   HttpSignatureBase, HttpSignatureHeaders, HttpSignatureHeadersMap, HttpSignatureParams, SigningKey, VerifyingKey,
 };
+use indexmap::{IndexMap, IndexSet};
 use std::future::Future;
+
+/// A type alias for the signature name
+type SignatureName = String;
+/// A type alias for the key id in base 64
+type KeyId = String;
 
 /* --------------------------------------- */
 /// A trait to set the http message signature from given http signature params
@@ -39,7 +45,7 @@ pub trait RequestMessageSignature {
     &self,
     verifying_key: &T,
     key_id: Option<&str>,
-  ) -> impl Future<Output = Result<(), Self::Error>> + Send
+  ) -> impl Future<Output = Result<SignatureName, Self::Error>> + Send
   where
     Self: Sized,
     T: VerifyingKey + Sync;
@@ -48,7 +54,7 @@ pub trait RequestMessageSignature {
   fn verify_message_signatures<T>(
     &self,
     key_and_id: &[(&T, Option<&str>)],
-  ) -> impl Future<Output = Result<Vec<Result<(), Self::Error>>, Self::Error>> + Send
+  ) -> impl Future<Output = Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>> + Send
   where
     Self: Sized,
     T: VerifyingKey + Sync;
@@ -57,13 +63,13 @@ pub trait RequestMessageSignature {
   fn has_message_signature(&self) -> bool;
 
   /// Extract all key ids for signature bases contained in the request headers
-  fn get_key_ids(&self) -> Result<Vec<String>, Self::Error>;
+  fn get_key_ids(&self) -> Result<IndexMap<SignatureName, KeyId>, Self::Error>;
 
   /// Extract all signature params used to generate signature bases contained in the request headers
-  fn get_signature_params(&self) -> Result<Vec<HttpSignatureParams>, Self::Error>;
+  fn get_signature_params(&self) -> Result<IndexMap<SignatureName, HttpSignatureParams>, Self::Error>;
 
   /// Extract all signature bases contained in the request headers
-  fn extract_signatures(&self) -> Result<Vec<(HttpSignatureBase, HttpSignatureHeaders)>, Self::Error>;
+  fn extract_signatures(&self) -> Result<IndexMap<SignatureName, (HttpSignatureBase, HttpSignatureHeaders)>, Self::Error>;
 }
 
 impl<D> RequestMessageSignature for Request<D>
@@ -92,7 +98,7 @@ where
   /// Return Ok(()) if the signature is valid.
   /// If invalid for the given key or error occurs (like the case where the request does not have signature and/or signature-input headers), return Err.
   /// If key_id is given, it is used to match the key id in signature params
-  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> HyperSigResult<()>
+  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> HyperSigResult<SignatureName>
   where
     Self: Sized,
     T: VerifyingKey + Sync,
@@ -110,36 +116,36 @@ where
   }
 
   /// Extract all signature bases contained in the request headers
-  fn get_key_ids(&self) -> HyperSigResult<Vec<String>> {
+  fn get_key_ids(&self) -> HyperSigResult<IndexMap<SignatureName, KeyId>> {
     let signature_headers_map = extract_signature_headers_with_name(self)?;
     let res = signature_headers_map
       .iter()
-      .filter_map(|(_, headers)| headers.signature_params().keyid.clone())
-      .collect::<Vec<_>>();
+      .filter_map(|(name, headers)| headers.signature_params().keyid.clone().map(|key_id| (name.clone(), key_id)))
+      .collect();
     Ok(res)
   }
 
   /// Extract all signature params used to generate signature bases contained in the request headers
-  fn get_signature_params(&self) -> Result<Vec<HttpSignatureParams>, Self::Error> {
+  fn get_signature_params(&self) -> Result<IndexMap<SignatureName, HttpSignatureParams>, Self::Error> {
     let signature_headers_map = extract_signature_headers_with_name(self)?;
     let res = signature_headers_map
       .iter()
-      .map(|(_, headers)| headers.signature_params().clone())
-      .collect::<Vec<_>>();
+      .map(|(name, headers)| (name.clone(), headers.signature_params().clone()))
+      .collect();
     Ok(res)
   }
 
   /// Extract all signature bases contained in the request headers
-  fn extract_signatures(&self) -> Result<Vec<(HttpSignatureBase, HttpSignatureHeaders)>, Self::Error> {
+  fn extract_signatures(&self) -> Result<IndexMap<SignatureName, (HttpSignatureBase, HttpSignatureHeaders)>, Self::Error> {
     let signature_headers_map = extract_signature_headers_with_name(self)?;
     let extracted = signature_headers_map
       .iter()
-      .filter_map(|(_, headers)| {
+      .filter_map(|(name, headers)| {
         build_signature_base_from_request(self, headers.signature_params())
           .ok()
-          .map(|base| (base, headers.clone()))
+          .map(|base| (name.clone(), (base, headers.clone())))
       })
-      .collect::<Vec<_>>();
+      .collect();
     Ok(extracted)
   }
 
@@ -172,7 +178,7 @@ where
   async fn verify_message_signatures<T>(
     &self,
     key_and_id: &[(&T, Option<&str>)],
-  ) -> Result<Vec<Result<(), Self::Error>>, Self::Error>
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
   where
     Self: Sized,
     T: VerifyingKey + Sync,
@@ -182,17 +188,17 @@ where
         "The request does not have signature and signature-input headers".to_string(),
       ));
     }
-    let vec_signature_with_base = self.extract_signatures()?;
+    let map_signature_with_base = self.extract_signatures()?;
 
     // verify for each key_and_id tuple
     let res_fut = key_and_id.iter().map(|(key, key_id)| {
       let filtered = if let Some(key_id) = key_id {
-        vec_signature_with_base
+        map_signature_with_base
           .iter()
-          .filter(|(base, _)| base.keyid() == Some(key_id))
-          .collect::<Vec<_>>()
+          .filter(|(_, (base, _))| base.keyid() == Some(key_id))
+          .collect::<IndexMap<_, _>>()
       } else {
-        vec_signature_with_base.iter().collect()
+        map_signature_with_base.iter().collect()
       };
 
       // check if any one of the signature headers is valid in async manner
@@ -203,11 +209,12 @@ where
           ));
         }
         // check if any one of the signature headers is valid
-        let res_each = filtered
+        let successful_sig_names = filtered
           .iter()
-          .any(|(base, headers)| base.verify_signature_headers(*key, headers).is_ok());
-        if res_each {
-          Ok(())
+          .filter_map(|(&name, (base, headers))| base.verify_signature_headers(*key, headers).ok().map(|_| name.clone()))
+          .collect::<IndexSet<_>>();
+        if !successful_sig_names.is_empty() {
+          Ok(successful_sig_names.first().unwrap().clone())
         } else {
           Err(HyperSigError::InvalidSignature(
             "Invalid signature for the verifying key".to_string(),
@@ -623,5 +630,7 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
       .unwrap();
 
     assert!(verification_res.len() == 2 && verification_res.iter().all(|r| r.is_ok()));
+    assert!(verification_res[0].as_ref().unwrap() == "eddsa_sig");
+    assert!(verification_res[1].as_ref().unwrap() == "p256_sig");
   }
 }

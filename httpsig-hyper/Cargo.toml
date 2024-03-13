@@ -21,6 +21,7 @@ futures = { version = "0.3.30", default-features = false, features = [
   "std",
   "async-await",
 ] }
+indexmap = { version = "2.2.5" }
 
 # content digest with rfc8941 structured field values
 sha2 = { version = "0.10.8", default-features = false }
