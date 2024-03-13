@@ -25,12 +25,30 @@ pub trait RequestMessageSignature {
     Self: Sized,
     T: SigningKey + Sync;
 
+  /// Set the http message signatures from given tuples of (http signature params, signing key, name)
+  fn set_message_signatures<T>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+  ) -> impl Future<Output = Result<(), Self::Error>> + Send
+  where
+    Self: Sized,
+    T: SigningKey + Sync;
+
   /// Verify the http message signature with given verifying key if the request has signature and signature-input headers
   fn verify_message_signature<T>(
     &self,
     verifying_key: &T,
     key_id: Option<&str>,
   ) -> impl Future<Output = Result<(), Self::Error>> + Send
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync;
+
+  /// Verify multiple signatures at once
+  fn verify_message_signatures<T>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+  ) -> impl Future<Output = Result<Vec<Result<(), Self::Error>>, Self::Error>> + Send
   where
     Self: Sized,
     T: VerifyingKey + Sync;
@@ -65,17 +83,9 @@ where
     Self: Sized,
     T: SigningKey + Sync,
   {
-    let signature_base = build_signature_base_from_request(self, signature_params)?;
-    let signature_headers = signature_base.build_signature_headers(signing_key, signature_name)?;
-
     self
-      .headers_mut()
-      .append("signature-input", signature_headers.signature_input_header_value().parse()?);
-    self
-      .headers_mut()
-      .append("signature", signature_headers.signature_header_value().parse()?);
-
-    Ok(())
+      .set_message_signatures(&[(&signature_params, signing_key, signature_name)])
+      .await
   }
 
   /// Verify the http message signature with given verifying key if the request has signature and signature-input headers
@@ -87,39 +97,11 @@ where
     Self: Sized,
     T: VerifyingKey + Sync,
   {
-    if !self.has_message_signature() {
-      return Err(HyperSigError::NoSignatureHeaders(
-        "The request does not have signature and signature-input headers".to_string(),
-      ));
-    }
-
-    let vec_signature_with_base = self.extract_signatures()?;
-    let filtered = if let Some(key_id) = key_id {
-      vec_signature_with_base
-        .iter()
-        .filter(|(base, _)| base.keyid() == Some(key_id))
-        .collect::<Vec<_>>()
-    } else {
-      vec_signature_with_base.iter().collect()
-    };
-    if filtered.is_empty() {
-      return Err(HyperSigError::NoSignatureHeaders(
-        "No signature as appropriate target for verification".to_string(),
-      ));
-    }
-
-    // check if any one of the signature headers is valid
-    let res = filtered
-      .iter()
-      .any(|(base, headers)| base.verify_signature_headers(verifying_key, headers).is_ok());
-
-    if res {
-      Ok(())
-    } else {
-      Err(HyperSigError::InvalidSignature(
-        "Invalid signature for the verifying key".to_string(),
-      ))
-    }
+    self
+      .verify_message_signatures(&[(verifying_key, key_id)])
+      .await?
+      .pop()
+      .unwrap()
   }
 
   /// Check if the request has signature and signature-input headers
@@ -159,6 +141,82 @@ where
       })
       .collect::<Vec<_>>();
     Ok(extracted)
+  }
+
+  async fn set_message_signatures<T>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    let vec_signature_headers_fut = params_key_name.iter().flat_map(|(params, key, name)| {
+      build_signature_base_from_request(self, params).map(|base| async move { base.build_signature_headers(*key, *name) })
+    });
+    let vec_signature_headers = futures::future::join_all(vec_signature_headers_fut)
+      .await
+      .into_iter()
+      .collect::<Result<Vec<_>, _>>()?;
+    vec_signature_headers.iter().try_for_each(|headers| {
+      self
+        .headers_mut()
+        .append("signature-input", headers.signature_input_header_value().parse()?);
+      self
+        .headers_mut()
+        .append("signature", headers.signature_header_value().parse()?);
+      Ok(()) as Result<(), HyperSigError>
+    })
+  }
+
+  async fn verify_message_signatures<T>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+  ) -> Result<Vec<Result<(), Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    if !self.has_message_signature() {
+      return Err(HyperSigError::NoSignatureHeaders(
+        "The request does not have signature and signature-input headers".to_string(),
+      ));
+    }
+    let vec_signature_with_base = self.extract_signatures()?;
+
+    // verify for each key_and_id tuple
+    let res_fut = key_and_id.iter().map(|(key, key_id)| {
+      let filtered = if let Some(key_id) = key_id {
+        vec_signature_with_base
+          .iter()
+          .filter(|(base, _)| base.keyid() == Some(key_id))
+          .collect::<Vec<_>>()
+      } else {
+        vec_signature_with_base.iter().collect()
+      };
+
+      // check if any one of the signature headers is valid in async manner
+      async move {
+        if filtered.is_empty() {
+          return Err(HyperSigError::NoSignatureHeaders(
+            "No signature as appropriate target for verification".to_string(),
+          ));
+        }
+        // check if any one of the signature headers is valid
+        let res_each = filtered
+          .iter()
+          .any(|(base, headers)| base.verify_signature_headers(*key, headers).is_ok());
+        if res_each {
+          Ok(())
+        } else {
+          Err(HyperSigError::InvalidSignature(
+            "Invalid signature for the verifying key".to_string(),
+          ))
+        }
+      }
+    });
+    let res = futures::future::join_all(res_fut).await;
+    Ok(res)
   }
 }
 
@@ -519,5 +577,51 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let key_ids = req.get_key_ids().unwrap();
     assert_eq!(key_ids.len(), 1);
     assert_eq!(key_ids[0], "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
+  }
+
+  const P256_SECERT_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgv7zxW56ojrWwmSo1
+4uOdbVhUfj9Jd+5aZIB9u8gtWnihRANCAARGYsMe0CT6pIypwRvoJlLNs4+cTh2K
+L7fUNb5i6WbKxkpAoO+6T3pMBG5Yw7+8NuGTvvtrZAXduA2giPxQ8zCf
+-----END PRIVATE KEY-----
+"##;
+  const P256_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERmLDHtAk+qSMqcEb6CZSzbOPnE4d
+ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
+-----END PUBLIC KEY-----
+"##;
+  #[tokio::test]
+  async fn test_set_verify_multiple_signatures() {
+    let mut req = build_request().await;
+
+    let secret_key_eddsa = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params_eddsa = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+    signature_params_eddsa.set_key_info(&secret_key_eddsa);
+
+    let secret_key_p256 = SecretKey::from_pem(P256_SECERT_KEY).unwrap();
+    let mut signature_params_hmac = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+    signature_params_hmac.set_key_info(&secret_key_p256);
+
+    let params_key_name = &[
+      (&signature_params_eddsa, &secret_key_eddsa, Some("eddsa_sig")),
+      (&signature_params_hmac, &secret_key_p256, Some("p256_sig")),
+    ];
+
+    req.set_message_signatures(params_key_name).await.unwrap();
+
+    let public_key_eddsa = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key_p256 = PublicKey::from_pem(P256_PUBLIC_KEY).unwrap();
+    let key_id_eddsa = public_key_eddsa.key_id();
+    let key_id_p256 = public_key_p256.key_id();
+
+    let verification_res = req
+      .verify_message_signatures(&[
+        (&public_key_eddsa, Some(&key_id_eddsa)),
+        (&public_key_p256, Some(&key_id_p256)),
+      ])
+      .await
+      .unwrap();
+
+    assert!(verification_res.len() == 2 && verification_res.iter().all(|r| r.is_ok()));
   }
 }
