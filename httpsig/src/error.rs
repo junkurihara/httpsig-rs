@@ -53,6 +53,10 @@ pub enum HttpSigError {
   #[error("Failed to build signature base: {0}")]
   BuildSignatureBaseError(String),
 
+  /// Expired signature params
+  #[error("Expired signature params: {0}")]
+  ExpiredSignatureParams(String),
+
   /* ----- Other errors ----- */
   /// NotYetImplemented
   #[error("Not yet implemented: {0}")]

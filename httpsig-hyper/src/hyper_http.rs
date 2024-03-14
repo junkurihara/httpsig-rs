@@ -513,6 +513,23 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   }
 
   #[tokio::test]
+  async fn test_expired_signature() {
+    let mut req = build_request().await;
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
+    signature_params.set_key_info(&secret_key);
+    let created = signature_params.created.unwrap();
+    signature_params.set_expires(created - 1);
+    assert!(signature_params.is_expired());
+
+    req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = req.verify_message_signature(&public_key, None).await;
+    assert!(verification_res.is_err());
+  }
+
+  #[tokio::test]
   async fn test_set_verify_with_signature_name() {
     let mut req = build_request().await;
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();

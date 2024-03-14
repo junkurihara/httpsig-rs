@@ -197,6 +197,11 @@ impl HttpSignatureBase {
     verifying_key: &impl VerifyingKey,
     signature_headers: &HttpSignatureHeaders,
   ) -> HttpSigResult<()> {
+    if signature_headers.signature_params().is_expired() {
+      return Err(HttpSigError::ExpiredSignatureParams(
+        "Signature params is expired".to_string(),
+      ));
+    }
     let signature_bytes = signature_headers.signature.0.as_slice();
     verifying_key.verify(&self.as_bytes(), signature_bytes)
   }

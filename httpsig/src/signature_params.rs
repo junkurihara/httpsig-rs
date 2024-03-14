@@ -108,6 +108,16 @@ impl HttpSignatureParams {
     self.expires = Some(self.created.unwrap() + duration_secs);
     self
   }
+
+  /// Check if the signature params is expired if `exp` field is present.
+  /// If `exp` field is not present, it always returns false.
+  pub fn is_expired(&self) -> bool {
+    if let Some(exp) = self.expires {
+      exp < SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+    } else {
+      false
+    }
+  }
 }
 
 impl std::fmt::Display for HttpSignatureParams {
@@ -263,6 +273,11 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     params.set_expires_with_duration(Some(100));
     assert!(params.expires.is_some());
     assert_eq!(params.expires.unwrap(), params.created.unwrap() + 100);
+    assert!(!params.is_expired());
+
+    let created = params.created.unwrap();
+    params.set_expires(created - 1);
+    assert!(params.is_expired());
   }
 
   #[test]
