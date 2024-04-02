@@ -21,7 +21,7 @@ futures = { version = "0.3.30", default-features = false, features = [
   "std",
   "async-await",
 ] }
-indexmap = { version = "2.2.5" }
+indexmap = { version = "2.2.6" }
 
 # content digest with rfc8941 structured field values
 sha2 = { version = "0.10.8", default-features = false }
@@ -34,11 +34,11 @@ base64 = { version = "0.22.0" }
 http = { version = "1.1.0" }
 http-body = { version = "1.0.0" }
 http-body-util = { version = "0.1.1" }
-bytes = { version = "1.5.0" }
+bytes = { version = "1.6.0" }
 
 
 [dev-dependencies]
-tokio = { version = "1.36.0", default-features = false, features = [
+tokio = { version = "1.37.0", default-features = false, features = [
   "macros",
   "rt-multi-thread",
 ] } # testing only
