@@ -36,7 +36,7 @@ impl std::str::FromStr for ContentDigestType {
 pub use error::{HyperDigestError, HyperDigestResult, HyperSigError, HyperSigResult};
 pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
-pub use hyper_http::RequestMessageSignature;
+pub use hyper_http::MessageSignature;
 
 /* ----------------------------------------------------------------- */
 #[cfg(test)]

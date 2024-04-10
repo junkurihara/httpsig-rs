@@ -1,5 +1,5 @@
 use crate::error::{HyperSigError, HyperSigResult};
-use http::Request;
+use http::{Request, Response};
 use http_body::Body;
 use httpsig::prelude::{
   message_component::{
@@ -17,7 +17,7 @@ type KeyId = String;
 
 /* --------------------------------------- */
 /// A trait to set the http message signature from given http signature params
-pub trait RequestMessageSignature {
+pub trait MessageSignature {
   type Error;
 
   /// Set the http message signature from given http signature params and signing key
@@ -72,7 +72,8 @@ pub trait RequestMessageSignature {
   fn extract_signatures(&self) -> Result<IndexMap<SignatureName, (HttpSignatureBase, HttpSignatureHeaders)>, Self::Error>;
 }
 
-impl<D> RequestMessageSignature for Request<D>
+/* --------------------------------------- */
+impl<D> MessageSignature for Request<D>
 where
   D: Send + Body + Sync,
 {
@@ -224,6 +225,73 @@ where
     });
     let res = futures::future::join_all(res_fut).await;
     Ok(res)
+  }
+}
+
+/* --------------------------------------- */
+impl<D> MessageSignature for Response<D>
+where
+  D: Send + Body + Sync,
+{
+  type Error = HyperSigError;
+
+  async fn set_message_signature<T>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    signing_key: &T,
+    signature_name: Option<&str>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    todo!()
+  }
+
+  async fn set_message_signatures<T>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    todo!()
+  }
+
+  async fn verify_message_signature<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<SignatureName, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    todo!()
+  }
+
+  async fn verify_message_signatures<T>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    todo!()
+  }
+
+  fn has_message_signature(&self) -> bool {
+    todo!()
+  }
+
+  fn get_key_ids(&self) -> Result<IndexMap<SignatureName, KeyId>, Self::Error> {
+    todo!()
+  }
+
+  fn get_signature_params(&self) -> Result<IndexMap<SignatureName, HttpSignatureParams>, Self::Error> {
+    todo!()
+  }
+
+  fn extract_signatures(&self) -> Result<IndexMap<SignatureName, (HttpSignatureBase, HttpSignatureHeaders)>, Self::Error> {
+    todo!()
   }
 }
 
