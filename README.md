@@ -21,7 +21,7 @@ This crates provides a basic library [httpsig](./httpsig) and [its extension](./
 ~~- [ ] RSASSA-PSS using SHA-512~~
 ~~- [ ] RSASSA-PKCS1-v1_5 using SHA-256~~
 
-At this point, we have no plan to support RSA signature due to [the problem related to the non-constant time operation](https://github.com/RustCrypto/RSA/issues/19), i.e., Mervin Attack.
+At this point, we have no plan to support RSA signature due to [the problem related to the non-constant time operation](https://github.com/RustCrypto/RSA/issues/19), i.e., [Mervin Attack](https://people.redhat.com/~hkario/marvin/).
 
 ## Usage of Extension for `hyper` (`httpsig-hyper`)
 
