@@ -3,12 +3,20 @@
 [![httpsig-hyper](https://img.shields.io/crates/v/httpsig-hyper.svg)](https://crates.io/crates/httpsig-hyper)
 [![httpsig-hyper](https://docs.rs/httpsig-hyper/badge.svg)](https://docs.rs/httpsig-hyper)
 
-## Example
+## Examples
 
 You can run a basic example in [./examples](./examples/) as follows.
 
+### Sign and Verify a Request
+
 ```sh
-% cargo run --examples hyper
+% cargo run --example hyper-request
+```
+
+### Sign and Verify a Response
+
+```sh
+% cargo run --example hyper-response
 ```
 
 ## Caveats
