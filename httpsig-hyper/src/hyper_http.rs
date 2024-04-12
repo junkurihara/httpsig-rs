@@ -142,7 +142,8 @@ where
     let extracted = signature_headers_map
       .iter()
       .filter_map(|(name, headers)| {
-        build_signature_base_from_request(self, headers.signature_params())
+        let req_or_res = RequestOrResponse::Request(self);
+        build_signature_base(&req_or_res, headers.signature_params(), None)
           .ok()
           .map(|base| (name.clone(), (base, headers.clone())))
       })
@@ -159,7 +160,8 @@ where
     T: SigningKey + Sync,
   {
     let vec_signature_headers_fut = params_key_name.iter().flat_map(|(params, key, name)| {
-      build_signature_base_from_request(self, params).map(|base| async move { base.build_signature_headers(*key, *name) })
+      let req_or_res = RequestOrResponse::Request(self);
+      build_signature_base(&req_or_res, params, None).map(|base| async move { base.build_signature_headers(*key, *name) })
     });
     let vec_signature_headers = futures::future::join_all(vec_signature_headers_fut)
       .await
@@ -330,6 +332,31 @@ enum RequestOrResponse<'a, B> {
   Response(&'a Response<B>),
 }
 
+impl<'a, B> RequestOrResponse<'a, B> {
+  fn method(&self) -> HyperSigResult<&http::Method> {
+    match self {
+      RequestOrResponse::Request(req) => Ok(req.method()),
+      _ => Err(HyperSigError::InvalidComponentName(
+        "`method` is only for request".to_string(),
+      )),
+    }
+  }
+
+  fn uri(&self) -> HyperSigResult<&http::Uri> {
+    match self {
+      RequestOrResponse::Request(req) => Ok(req.uri()),
+      _ => Err(HyperSigError::InvalidComponentName("`uri` is only for request".to_string())),
+    }
+  }
+
+  fn headers(&self) -> &HeaderMap {
+    match self {
+      RequestOrResponse::Request(req) => req.headers(),
+      RequestOrResponse::Response(res) => res.headers(),
+    }
+  }
+}
+
 /// Extract signature and signature-input with signature-name indication from http request
 fn extract_signature_headers_with_name<B>(req: &Request<B>) -> HyperSigResult<HttpSignatureHeadersMap> {
   if !(req.headers().contains_key("signature-input") && req.headers().contains_key("signature")) {
@@ -355,20 +382,6 @@ fn extract_signature_headers_with_name<B>(req: &Request<B>) -> HyperSigResult<Ht
 
   let signature_headers = HttpSignatureHeaders::try_parse(&signature_strings, &signature_input_strings)?;
   Ok(signature_headers)
-}
-
-/// Build signature base from hyper http request and signature params
-fn build_signature_base_from_request<B>(
-  req: &Request<B>,
-  signature_params: &HttpSignatureParams,
-) -> HyperSigResult<HttpSignatureBase> {
-  let component_lines = signature_params
-    .covered_components
-    .iter()
-    .map(|component_id| extract_http_message_component_from_request(req, component_id))
-    .collect::<Result<Vec<_>, _>>()?;
-
-  HttpSignatureBase::try_new(&component_lines, signature_params).map_err(|e| e.into())
 }
 
 /// Build signature base from hyper http request/response and signature params
@@ -427,88 +440,6 @@ fn extract_http_field<B>(req_or_res: &RequestOrResponse<B>, id: &HttpMessageComp
   HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| e.into())
 }
 
-/// Extract http field from hyper http request
-fn extract_http_field_from_request<B>(req: &Request<B>, id: &HttpMessageComponentId) -> HyperSigResult<HttpMessageComponent> {
-  let HttpMessageComponentName::HttpField(header_name) = &id.name else {
-    return Err(HyperSigError::InvalidComponentName(
-      "invalid http message component name as http field".to_string(),
-    ));
-  };
-  if id.params.0.contains(&HttpMessageComponentParam::Req) {
-    return Err(HyperSigError::InvalidComponentParam(
-      "`req` is not allowed in request".to_string(),
-    ));
-  }
-
-  let field_values = req
-    .headers()
-    .get_all(header_name)
-    .iter()
-    .map(|v| v.to_str().map(|s| s.to_owned()))
-    .collect::<Result<Vec<_>, _>>()?;
-
-  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| e.into())
-}
-
-/// Extract derived component from hyper http request
-fn extract_derived_component_from_request<B>(
-  req: &Request<B>,
-  id: &HttpMessageComponentId,
-) -> HyperSigResult<HttpMessageComponent> {
-  let HttpMessageComponentName::Derived(derived_id) = &id.name else {
-    return Err(HyperSigError::InvalidComponentName(
-      "invalid http message component name as derived component".to_string(),
-    ));
-  };
-  if !id.params.0.is_empty() {
-    return Err(HyperSigError::InvalidComponentParam(
-      "derived component does not allow parameters for request".to_string(),
-    ));
-  }
-
-  let field_values: Vec<String> = match derived_id {
-    DerivedComponentName::Method => vec![req.method().as_str().to_string()],
-    DerivedComponentName::TargetUri => vec![req.uri().to_string()],
-    DerivedComponentName::Authority => vec![req.uri().authority().map(|s| s.to_string()).unwrap_or("".to_string())],
-    DerivedComponentName::Scheme => vec![req.uri().scheme_str().unwrap_or("").to_string()],
-    DerivedComponentName::RequestTarget => match *req.method() {
-      http::Method::CONNECT => vec![req.uri().authority().map(|s| s.to_string()).unwrap_or("".to_string())],
-      http::Method::OPTIONS => vec!["*".to_string()],
-      _ => vec![req.uri().path_and_query().map(|s| s.to_string()).unwrap_or("".to_string())],
-    },
-    DerivedComponentName::Path => vec![{
-      let p = req.uri().path();
-      if p.is_empty() {
-        "/".to_string()
-      } else {
-        p.to_string()
-      }
-    }],
-    DerivedComponentName::Query => vec![req.uri().query().map(|v| format!("?{v}")).unwrap_or("?".to_string())],
-    DerivedComponentName::QueryParam => {
-      let query = req.uri().query().unwrap_or("");
-      query
-        .split('&')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-    }
-    DerivedComponentName::Status => {
-      return Err(HyperSigError::InvalidComponentName(
-        "`status` is only for response".to_string(),
-      ))
-    }
-    DerivedComponentName::SignatureParams => req
-      .headers()
-      .get_all("signature-input")
-      .iter()
-      .map(|v| v.to_str().unwrap_or("").to_string())
-      .collect::<Vec<_>>(),
-  };
-
-  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| e.into())
-}
-
 /// Extract derived component from hyper http request/response
 fn extract_derived_component<B>(
   req_or_res: &RequestOrResponse<B>,
@@ -525,62 +456,54 @@ fn extract_derived_component<B>(
     ));
   }
 
-  // let field_values: Vec<String> = match derived_id {
-  //   DerivedComponentName::Method => vec![req.method().as_str().to_string()],
-  //   DerivedComponentName::TargetUri => vec![req.uri().to_string()],
-  //   DerivedComponentName::Authority => vec![req.uri().authority().map(|s| s.to_string()).unwrap_or("".to_string())],
-  //   DerivedComponentName::Scheme => vec![req.uri().scheme_str().unwrap_or("").to_string()],
-  //   DerivedComponentName::RequestTarget => match *req.method() {
-  //     http::Method::CONNECT => vec![req.uri().authority().map(|s| s.to_string()).unwrap_or("".to_string())],
-  //     http::Method::OPTIONS => vec!["*".to_string()],
-  //     _ => vec![req.uri().path_and_query().map(|s| s.to_string()).unwrap_or("".to_string())],
-  //   },
-  //   DerivedComponentName::Path => vec![{
-  //     let p = req.uri().path();
-  //     if p.is_empty() {
-  //       "/".to_string()
-  //     } else {
-  //       p.to_string()
-  //     }
-  //   }],
-  //   DerivedComponentName::Query => vec![req.uri().query().map(|v| format!("?{v}")).unwrap_or("?".to_string())],
-  //   DerivedComponentName::QueryParam => {
-  //     let query = req.uri().query().unwrap_or("");
-  //     query
-  //       .split('&')
-  //       .filter(|s| !s.is_empty())
-  //       .map(|s| s.to_string())
-  //       .collect::<Vec<_>>()
-  //   }
-  //   DerivedComponentName::Status => {
-  //     return Err(HyperSigError::InvalidComponentName(
-  //       "`status` is only for response".to_string(),
-  //     ))
-  //   }
-  //   DerivedComponentName::SignatureParams => req
-  //     .headers()
-  //     .get_all("signature-input")
-  //     .iter()
-  //     .map(|v| v.to_str().unwrap_or("").to_string())
-  //     .collect::<Vec<_>>(),
-  // };
+  let field_values: Vec<String> = match derived_id {
+    DerivedComponentName::Method => vec![req_or_res.method()?.as_str().to_string()],
+    DerivedComponentName::TargetUri => vec![req_or_res.uri()?.to_string()],
+    DerivedComponentName::Authority => vec![req_or_res.uri()?.authority().map(|s| s.to_string()).unwrap_or("".to_string())],
+    DerivedComponentName::Scheme => vec![req_or_res.uri()?.scheme_str().unwrap_or("").to_string()],
+    DerivedComponentName::RequestTarget => match *req_or_res.method()? {
+      http::Method::CONNECT => vec![req_or_res.uri()?.authority().map(|s| s.to_string()).unwrap_or("".to_string())],
+      http::Method::OPTIONS => vec!["*".to_string()],
+      _ => vec![req_or_res
+        .uri()?
+        .path_and_query()
+        .map(|s| s.to_string())
+        .unwrap_or("".to_string())],
+    },
+    DerivedComponentName::Path => vec![{
+      let p = req_or_res.uri()?.path();
+      if p.is_empty() {
+        "/".to_string()
+      } else {
+        p.to_string()
+      }
+    }],
+    DerivedComponentName::Query => vec![req_or_res.uri()?.query().map(|v| format!("?{v}")).unwrap_or("?".to_string())],
+    DerivedComponentName::QueryParam => {
+      let query = req_or_res.uri()?.query().unwrap_or("");
+      query
+        .split('&')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+    }
+    DerivedComponentName::Status => {
+      return Err(HyperSigError::InvalidComponentName(
+        "`status` is only for response".to_string(),
+      ))
+    }
+    DerivedComponentName::SignatureParams => req_or_res
+      .headers()
+      .get_all("signature-input")
+      .iter()
+      .map(|v| v.to_str().unwrap_or("").to_string())
+      .collect::<Vec<_>>(),
+  };
 
-  // HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| e.into())
-  todo!()
+  HttpMessageComponent::try_from((id, field_values.as_slice())).map_err(|e| e.into())
 }
 
 /* --------------------------------------- */
-/// Extract http message component from hyper http request
-fn extract_http_message_component_from_request<B>(
-  req: &Request<B>,
-  target_component_id: &HttpMessageComponentId,
-) -> HyperSigResult<HttpMessageComponent> {
-  match &target_component_id.name {
-    HttpMessageComponentName::HttpField(_) => extract_http_field_from_request(req, target_component_id),
-    HttpMessageComponentName::Derived(_) => extract_derived_component_from_request(req, target_component_id),
-  }
-}
-
 /// Extract http message component from hyper http request
 fn extract_http_message_component<B>(
   req_or_res: &RequestOrResponse<B>,
@@ -639,24 +562,25 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[tokio::test]
   async fn test_extract_component_from_request() {
     let req = build_request().await;
+    let req_or_res = RequestOrResponse::Request(&req);
 
     let component_id_method = HttpMessageComponentId::try_from("\"@method\"").unwrap();
-    let component = extract_http_message_component_from_request(&req, &component_id_method).unwrap();
+    let component = extract_http_message_component(&req_or_res, &component_id_method).unwrap();
     assert_eq!(component.to_string(), "\"@method\": GET");
 
     let component_id = HttpMessageComponentId::try_from("\"date\"").unwrap();
-    let component = extract_http_message_component_from_request(&req, &component_id).unwrap();
+    let component = extract_http_message_component(&req_or_res, &component_id).unwrap();
     assert_eq!(component.to_string(), "\"date\": Sun, 09 May 2021 18:30:00 GMT");
 
     let component_id = HttpMessageComponentId::try_from("content-type").unwrap();
-    let component = extract_http_field_from_request(&req, &component_id).unwrap();
+    let component = extract_http_field(&req_or_res, &component_id).unwrap();
     assert_eq!(
       component.to_string(),
       "\"content-type\": application/json, application/json-patch+json"
     );
 
     let component_id = HttpMessageComponentId::try_from("content-digest").unwrap();
-    let component = extract_http_message_component_from_request(&req, &component_id).unwrap();
+    let component = extract_http_message_component(&req_or_res, &component_id).unwrap();
     assert_eq!(
       component.to_string(),
       "\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"
@@ -672,7 +596,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       http::HeaderValue::from_static(r##"sig1=("@method" "@authority")"##),
     );
     let component_id = HttpMessageComponentId::try_from("@signature-params").unwrap();
-    let component = extract_http_message_component_from_request(&req, &component_id).unwrap();
+    let req_or_res = RequestOrResponse::Request(&req);
+    let component = extract_http_message_component(&req_or_res, &component_id).unwrap();
     assert_eq!(component.to_string(), "\"@signature-params\": (\"@method\" \"@authority\")");
     assert_eq!(component.value.to_string(), r##"("@method" "@authority")"##);
     assert_eq!(component.value.as_field_value(), r##"sig1=("@method" "@authority")"##);
@@ -688,7 +613,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let values = (r##""@method" "content-type" "date" "content-digest""##, SIGPARA);
     let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 
-    let signature_base = build_signature_base_from_request(&req, &signature_params).unwrap();
+    let req_or_res = RequestOrResponse::Request(&req);
+    let signature_base = build_signature_base(&req_or_res, &signature_params, None).unwrap();
     assert_eq!(
       signature_base.to_string(),
       r##""@method": GET
