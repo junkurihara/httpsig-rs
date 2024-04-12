@@ -36,13 +36,13 @@ impl std::str::FromStr for ContentDigestType {
 pub use error::{HyperDigestError, HyperDigestResult, HyperSigError, HyperSigResult};
 pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
-pub use hyper_http::RequestMessageSignature;
+pub use hyper_http::{MessageSignature, MessageSignatureReq, MessageSignatureRes};
 
 /* ----------------------------------------------------------------- */
 #[cfg(test)]
 mod tests {
   use super::{prelude::*, *};
-  use http::Request;
+  use http::{Request, Response};
   use http_body_util::Full;
   use httpsig::prelude::{PublicKey, SecretKey};
 
@@ -58,7 +58,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 "##;
   // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
 
-  const COVERED_COMPONENTS: &[&str] = &["@method", "date", "content-type", "content-digest"];
+  const COVERED_COMPONENTS_REQ: &[&str] = &["@method", "date", "content-type", "content-digest"];
+  const COVERED_COMPONENTS_RES: &[&str] = &["@status", "\"@method\";req", "date", "content-type", "\"content-digest\";req"];
 
   async fn build_request() -> Request<BoxBody> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
@@ -73,6 +74,18 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     req.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
   }
 
+  async fn build_response() -> Response<BoxBody> {
+    let body = Full::new(&b"{\"hello\": \"world!!\"}"[..]);
+    let res = Response::builder()
+      .status(200)
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .header("content-type", "application/json")
+      .header("content-type", "application/json-patch+json")
+      .body(body)
+      .unwrap();
+    res.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
+  }
+
   #[test]
   fn test_content_digest_type() {
     assert_eq!(ContentDigestType::Sha256.to_string(), "sha-256");
@@ -80,14 +93,14 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   }
 
   #[tokio::test]
-  async fn test_set_verify() {
+  async fn test_set_verify_request() {
     // show usage of set_message_signature and verify_message_signature
 
     let mut req = build_request().await;
 
     let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
 
-    let covered_components = COVERED_COMPONENTS
+    let covered_components = COVERED_COMPONENTS_REQ
       .iter()
       .map(|v| message_component::HttpMessageComponentId::try_from(*v))
       .collect::<Result<Vec<_>, _>>()
@@ -118,6 +131,55 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(verification_res.is_ok());
 
     let verification_res = req.verify_message_signature(&public_key, Some("NotFoundKeyId")).await;
+    assert!(verification_res.is_err());
+  }
+
+  #[tokio::test]
+  async fn test_set_verify_response() {
+    // show usage of set_message_signature and verify_message_signature
+
+    let req = build_request().await;
+    let mut res = build_response().await;
+
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+
+    let covered_components = COVERED_COMPONENTS_RES
+      .iter()
+      .map(|v| message_component::HttpMessageComponentId::try_from(*v))
+      .collect::<Result<Vec<_>, _>>()
+      .unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
+
+    // set key information, alg and keyid
+    signature_params.set_key_info(&secret_key);
+
+    // set custom signature name, and `req` field param if needed (e.g., request method, uri, content-digest, etc.) included only in response
+    res
+      .set_message_signature(&signature_params, &secret_key, Some("custom_sig_name"), Some(&req))
+      .await
+      .unwrap();
+    let signature_input = res.headers().get("signature-input").unwrap().to_str().unwrap();
+    let signature = res.headers().get("signature").unwrap().to_str().unwrap();
+    assert!(signature_input.starts_with(r##"custom_sig_name=("##));
+    assert!(signature.starts_with(r##"custom_sig_name=:"##));
+
+    // verify without checking key_id, request must be provided if `req` field param is included
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
+    assert!(verification_res.is_ok());
+    let verification_res = res
+      .verify_message_signature(&public_key, None, None as Option<&Request<()>>)
+      .await;
+    assert!(verification_res.is_err());
+
+    // verify with checking key_id
+    let key_id = public_key.key_id();
+    let verification_res = res.verify_message_signature(&public_key, Some(&key_id), Some(&req)).await;
+    assert!(verification_res.is_ok());
+
+    let verification_res = res
+      .verify_message_signature(&public_key, Some("NotFoundKeyId"), Some(&req))
+      .await;
     assert!(verification_res.is_err());
   }
 }
