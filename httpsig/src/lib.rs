@@ -1,3 +1,10 @@
+//! # httpsig
+//!
+//! `httpsig` is a library for raw HTTP Signature.
+//! It provides a simple API for signing and verifying HTTP messages, and does not depends on any HTTP framework.
+//! It simply handles header keys and values in `String` or `&str` as HTTP message components, which means it can be used in any HTTP framework but requires complicated handling of HTTP headers.
+//! We thus recommend to use [`httpsig-hyper`](https://crates.io/crates/httpsig-hyper) for `Hyper`` users, which provides a more convenient API.
+
 mod crypto;
 mod error;
 mod message_component;

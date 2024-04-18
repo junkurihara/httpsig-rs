@@ -1,3 +1,9 @@
+//! # httpsig-hyper
+//!
+//! `httpsig-hyper` is a crate that provides a convenient API for `Hyper` users to handle HTTP signatures.
+//! This crate extends hyper's https request and response messages with the ability to generate and verify HTTP signatures.
+//! Additionally it also provides a way to set and verify content-digest header.
+
 mod error;
 mod hyper_content_digest;
 mod hyper_http;
