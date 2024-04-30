@@ -15,7 +15,7 @@ rust-version.workspace = true
 [dependencies]
 httpsig = { path = "../httpsig", version = "0.0.15" }
 
-thiserror = { version = "1.0.58" }
+thiserror = { version = "1.0.59" }
 tracing = { version = "0.1.40" }
 futures = { version = "0.3.30", default-features = false, features = [
   "std",
