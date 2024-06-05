@@ -176,7 +176,7 @@ where
     T: SigningKey + Sync,
   {
     self
-      .set_message_signatures(&[(&signature_params, signing_key, signature_name)])
+      .set_message_signatures(&[(signature_params, signing_key, signature_name)])
       .await
   }
 
@@ -293,7 +293,7 @@ where
     B: Sync,
   {
     self
-      .set_message_signatures(&[(&signature_params, signing_key, signature_name)], req_for_param)
+      .set_message_signatures(&[(signature_params, signing_key, signature_name)], req_for_param)
       .await
   }
 

@@ -15,7 +15,7 @@ rust-version.workspace = true
 [dependencies]
 httpsig = { path = "../httpsig", version = "0.0.15" }
 
-thiserror = { version = "1.0.59" }
+thiserror = { version = "1.0.61" }
 tracing = { version = "0.1.40" }
 futures = { version = "0.3.30", default-features = false, features = [
   "std",
@@ -28,7 +28,7 @@ sha2 = { version = "0.10.8", default-features = false }
 sfv = { version = "0.9.4" }
 
 # encoding
-base64 = { version = "0.22.0" }
+base64 = { version = "0.22.1" }
 
 # for request and response headers
 http = { version = "1.1.0" }
@@ -38,7 +38,7 @@ bytes = { version = "1.6.0" }
 
 
 [dev-dependencies]
-tokio = { version = "1.37.0", default-features = false, features = [
+tokio = { version = "1.38.0", default-features = false, features = [
   "macros",
   "rt-multi-thread",
 ] } # testing only
