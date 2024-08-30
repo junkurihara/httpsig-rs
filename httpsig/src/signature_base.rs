@@ -119,6 +119,7 @@ impl HttpSignatureHeaders {
 }
 
 #[derive(Debug, Clone)]
+/// Wrapper struct of raw signature bytes
 pub struct HttpSignature(Vec<u8>);
 impl std::fmt::Display for HttpSignature {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
