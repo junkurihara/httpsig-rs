@@ -476,7 +476,7 @@ enum RequestOrResponse<'a, B> {
   Response(&'a Response<B>),
 }
 
-impl<'a, B> RequestOrResponse<'a, B> {
+impl<B> RequestOrResponse<'_, B> {
   fn method(&self) -> HyperSigResult<&http::Method> {
     match self {
       RequestOrResponse::Request(req) => Ok(req.method()),
