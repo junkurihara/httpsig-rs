@@ -16,7 +16,7 @@ rust-version.workspace = true
 thiserror = { version = "2.0.11" }
 tracing = { version = "0.1.41" }
 rustc-hash = { version = "2.1.0" }
-indexmap = { version = "2.7.0" }
+indexmap = { version = "2.7.1" }
 fxhash = { version = "0.2.1" }
 rand = { version = "0.8.5" }
 
