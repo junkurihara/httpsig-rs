@@ -359,7 +359,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let pk = PublicKey::from_bytes(AlgorithmName::Ed25519, ed25519_pk).unwrap();
     assert!(matches!(pk, PublicKey::Ed25519(_)));
 
-    let es256_sk = p256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+    let mut rng = rand_085::thread_rng();
+    let es256_sk = p256::ecdsa::SigningKey::random(&mut rng);
     let es256_pk = es256_sk.verifying_key();
     let sk = SecretKey::from_bytes(AlgorithmName::EcdsaP256Sha256, es256_sk.to_bytes().as_ref()).unwrap();
     assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
