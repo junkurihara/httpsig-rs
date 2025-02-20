@@ -95,8 +95,8 @@ impl HttpSignatureParams {
 
   /// Set random nonce
   pub fn set_random_nonce(&mut self) -> &mut Self {
-    let mut rng = rand::thread_rng();
-    let nonce = rng.gen::<[u8; 32]>();
+    let mut rng = rand::rng();
+    let nonce = rng.random::<[u8; 32]>();
     self.nonce = Some(general_purpose::STANDARD.encode(nonce));
     self
   }
