@@ -53,13 +53,14 @@ impl super::SigningKey for SharedKey {
 impl super::VerifyingKey for SharedKey {
   /// Verify the mac
   fn verify(&self, data: &[u8], expected_mac: &[u8]) -> HttpSigResult<()> {
-    use super::SigningKey;
-    debug!("Verify HmacSha256");
-    let calcurated_mac = self.sign(data)?;
-    if calcurated_mac == expected_mac {
-      Ok(())
-    } else {
-      Err(HttpSigError::InvalidSignature("Invalid MAC".to_string()))
+    match self {
+      SharedKey::HmacSha256(key) => {
+        debug!("Verify HmacSha256");
+        let mut mac = HmacSha256::new_from_slice(key).unwrap();
+        mac.update(data);
+        mac.verify_slice(expected_mac)
+          .map_err(|_| HttpSigError::InvalidSignature("Invalid MAC".to_string()))
+      }
     }
   }
 
