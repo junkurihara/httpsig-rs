@@ -1,7 +1,7 @@
 use crate::error::{HttpSigError, HttpSigResult};
 use sfv::{Parser, SerializeValue};
 
-type IndexSet<K> = indexmap::IndexSet<K, fxhash::FxBuildHasher>;
+type IndexSet<K> = indexmap::IndexSet<K, rustc_hash::FxBuildHasher>;
 
 /* ---------------------------------------------------------------- */
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
