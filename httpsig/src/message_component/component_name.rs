@@ -16,7 +16,7 @@ impl TryFrom<&BareItem> for HttpMessageComponentName {
   fn try_from(value: &BareItem) -> HttpSigResult<Self> {
     match value {
       BareItem::String(name) => {
-        if name.starts_with('@') {
+        if name.as_str().starts_with('@') {
           Ok(Self::Derived(DerivedComponentName::from(name.as_str())))
         } else {
           Ok(Self::HttpField(name.to_string()))

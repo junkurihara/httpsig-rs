@@ -6,8 +6,8 @@ use crate::{
   signature_params::HttpSignatureParams,
 };
 use base64::{engine::general_purpose, Engine as _};
-use rustc_hash::FxBuildHasher;
 use indexmap::IndexMap;
+use rustc_hash::FxBuildHasher;
 use sfv::{BareItem, Item, ListEntry, Parser};
 
 /// IndexMap of signature name and HttpSignatureHeaders
@@ -30,10 +30,16 @@ pub struct HttpSignatureHeaders {
 impl HttpSignatureHeaders {
   /// Generates (possibly multiple) HttpSignatureHeaders from signature and signature-input header values
   pub fn try_parse(signature_header: &str, signature_input_header: &str) -> HttpSigResult<HttpSignatureHeadersMap> {
-    let signature_input =
-      Parser::parse_dictionary(signature_input_header.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
-    let signature =
-      Parser::parse_dictionary(signature_header.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    let signature_input: sfv::Dictionary = Parser::new(signature_input_header)
+      .parse()
+      .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    let signature: sfv::Dictionary = Parser::new(signature_header)
+      .parse()
+      .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    // let signature_input =
+    //   Parser::parse_dictionary(signature_input_header.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    // let signature =
+    //   Parser::parse_dictionary(signature_header.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
 
     if signature.len() != signature_input.len() {
       return Err(HttpSigError::BuildSignatureHeaderError(
@@ -50,7 +56,7 @@ impl HttpSignatureHeaders {
       matches!(
         v,
         ListEntry::Item(Item {
-          bare_item: BareItem::ByteSeq(_),
+          bare_item: BareItem::ByteSequence(_),
           ..
         })
       )
@@ -73,7 +79,7 @@ impl HttpSignatureHeaders {
 
         let signature_bytes = match signature.get(k) {
           Some(ListEntry::Item(Item {
-            bare_item: BareItem::ByteSeq(v),
+            bare_item: BareItem::ByteSequence(v),
             ..
           })) => v,
           _ => unreachable!(),

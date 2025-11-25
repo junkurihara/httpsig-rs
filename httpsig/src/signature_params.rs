@@ -7,7 +7,7 @@ use crate::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
-use sfv::{ListEntry, Parser, SerializeValue};
+use sfv::{FieldType, ListEntry, Parser};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_DURATION: u64 = 300;
@@ -167,9 +167,10 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
       .items
       .iter()
       .map(|v| {
-        v.serialize_value()
-          .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))
-          .and_then(|v| HttpMessageComponentId::try_from(v.as_str()))
+        HttpMessageComponentId::try_from(v.serialize().as_str())
+        // v.serialize_value()
+        //   .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))
+        //   .and_then(|v| HttpMessageComponentId::try_from(v.as_str()))
       })
       .collect::<Result<Vec<_>, _>>()?;
 
@@ -193,12 +194,12 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
       .params
       .iter()
       .for_each(|(key, bare_item)| match key.as_str() {
-        "created" => params.created = bare_item.as_int().map(|v| v as u64),
-        "expires" => params.expires = bare_item.as_int().map(|v| v as u64),
-        "nonce" => params.nonce = bare_item.as_str().map(|v| v.to_string()),
-        "alg" => params.alg = bare_item.as_str().map(|v| v.to_string()),
-        "keyid" => params.keyid = bare_item.as_str().map(|v| v.to_string()),
-        "tag" => params.tag = bare_item.as_str().map(|v| v.to_string()),
+        "created" => params.created = bare_item.as_integer().map(|v| v.try_into().unwrap()),
+        "expires" => params.expires = bare_item.as_integer().map(|v| v.try_into().unwrap()),
+        "nonce" => params.nonce = bare_item.as_string().map(|v| v.to_string()),
+        "alg" => params.alg = bare_item.as_string().map(|v| v.to_string()),
+        "keyid" => params.keyid = bare_item.as_string().map(|v| v.to_string()),
+        "tag" => params.tag = bare_item.as_string().map(|v| v.to_string()),
         _ => {
           error!("Ignore invalid signature parameter: {}", key)
         }
@@ -211,7 +212,10 @@ impl TryFrom<&str> for HttpSignatureParams {
   type Error = HttpSigError;
   /// Convert from string to HttpSignatureParams
   fn try_from(value: &str) -> HttpSigResult<Self> {
-    let sfv_parsed = Parser::parse_list(value.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    let sfv_parsed: sfv::List = Parser::new(value)
+      .parse()
+      .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    // let sfv_parsed = Parser::parse_list(value.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
     if sfv_parsed.len() != 1 || !matches!(sfv_parsed[0], ListEntry::InnerList(_)) {
       return Err(HttpSigError::InvalidSignatureParams("Invalid signature params".to_string()));
     }
