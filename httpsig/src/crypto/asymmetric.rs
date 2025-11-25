@@ -365,7 +365,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let sk = SecretKey::from_bytes(AlgorithmName::EcdsaP256Sha256, es256_sk.to_bytes().as_ref()).unwrap();
     assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
     let pk_bytes = es256_pk.as_affine().to_bytes();
-    let pk = PublicKey::from_bytes(AlgorithmName::EcdsaP256Sha256, pk_bytes.as_slice()).unwrap();
+    let pk = PublicKey::from_bytes(AlgorithmName::EcdsaP256Sha256, pk_bytes.as_ref()).unwrap();
     assert!(matches!(pk, PublicKey::EcdsaP256Sha256(_)));
   }
 
