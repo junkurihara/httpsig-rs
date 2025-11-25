@@ -6,7 +6,7 @@ use crate::{
   signature_params::HttpSignatureParams,
 };
 use base64::{engine::general_purpose, Engine as _};
-use fxhash::FxBuildHasher;
+use rustc_hash::FxBuildHasher;
 use indexmap::IndexMap;
 use sfv::{BareItem, Item, ListEntry, Parser};
 

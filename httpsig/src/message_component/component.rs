@@ -186,7 +186,7 @@ pub(super) fn build_http_field_component(
 #[cfg(test)]
 mod tests {
   use super::*;
-  type IndexSet<K> = indexmap::IndexSet<K, fxhash::FxBuildHasher>;
+  type IndexSet<K> = indexmap::IndexSet<K, rustc_hash::FxBuildHasher>;
 
   #[test]
   fn test_from_serialized_string_derived() {
