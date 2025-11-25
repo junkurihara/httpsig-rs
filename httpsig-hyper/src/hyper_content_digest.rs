@@ -5,9 +5,9 @@ use bytes::Bytes;
 use http::{Request, Response};
 use http_body::Body;
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
-use sfv::FromStr;
 use sha2::Digest;
 use std::future::Future;
+use std::str::FromStr;
 
 // hyper's http specific extension to generate and verify http signature
 
@@ -209,7 +209,8 @@ async fn extract_content_digest(header_map: &http::HeaderMap) -> HyperDigestResu
     .get(CONTENT_DIGEST_HEADER)
     .ok_or(HyperDigestError::NoDigestHeader("No content-digest header".to_string()))?
     .to_str()?;
-  let indexmap = sfv::Parser::parse_dictionary(content_digest_header.as_bytes())
+  let indexmap = sfv::Parser::new(content_digest_header)
+    .parse::<sfv::Dictionary>()
     .map_err(|e| HyperDigestError::InvalidHeaderValue(e.to_string()))?;
   if indexmap.len() != 1 {
     return Err(HyperDigestError::InvalidHeaderValue(
@@ -217,12 +218,12 @@ async fn extract_content_digest(header_map: &http::HeaderMap) -> HyperDigestResu
     ));
   };
   let (cd_type, cd) = indexmap.iter().next().unwrap();
-  let cd_type = ContentDigestType::from_str(cd_type)
+  let cd_type = ContentDigestType::from_str(cd_type.as_str())
     .map_err(|e| HyperDigestError::InvalidHeaderValue(format!("Invalid Content-Digest type: {e}")))?;
   if !matches!(
     cd,
     sfv::ListEntry::Item(sfv::Item {
-      bare_item: sfv::BareItem::ByteSeq(_),
+      bare_item: sfv::BareItem::ByteSequence(_),
       ..
     })
   ) {
@@ -233,7 +234,7 @@ async fn extract_content_digest(header_map: &http::HeaderMap) -> HyperDigestResu
 
   let cd = match cd {
     sfv::ListEntry::Item(sfv::Item {
-      bare_item: sfv::BareItem::ByteSeq(cd),
+      bare_item: sfv::BareItem::ByteSequence(cd),
       ..
     }) => cd,
     _ => unreachable!(),

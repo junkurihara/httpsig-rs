@@ -35,11 +35,17 @@ impl TryFrom<&str> for HttpMessageComponentId {
   /// But accept string in the form of `<name>` (without double quotations) when no param is given
   fn try_from(val: &str) -> HttpSigResult<Self> {
     let val = val.trim();
-    let item = if !val.starts_with('"') && !val.ends_with('"') && !val.is_empty() && !val.contains('"') {
+    let item: sfv::Item = if !val.starts_with('"') && !val.ends_with('"') && !val.is_empty() && !val.contains('"') {
       // maybe insufficient, but it's enough for now
-      Parser::parse_item(format!("\"{val}\"").as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
+      Parser::new(format!("\"{val}\"").as_str())
+        .parse()
+        .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
+      // Parser::parse_item(format!("\"{val}\"").as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
     } else {
-      Parser::parse_item(val.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
+      Parser::new(val)
+        .parse()
+        .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
+      // Parser::parse_item(val.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?
     };
 
     let res = Self {

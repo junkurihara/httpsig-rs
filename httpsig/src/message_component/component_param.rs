@@ -1,5 +1,5 @@
 use crate::error::{HttpSigError, HttpSigResult};
-use sfv::{Parser, SerializeValue};
+use sfv::{FieldType, Parser};
 
 type IndexSet<K> = indexmap::IndexSet<K, rustc_hash::FxBuildHasher>;
 
@@ -46,13 +46,13 @@ impl TryFrom<(&str, &sfv::BareItem)> for HttpMessageComponentParam {
       "tr" => Ok(Self::Tr),
       "req" => Ok(Self::Req),
       "name" => {
-        let name = val.as_str().ok_or(HttpSigError::InvalidComponentParam(
+        let name = val.as_string().ok_or(HttpSigError::InvalidComponentParam(
           "Invalid http field param: name".to_string(),
         ))?;
         Ok(Self::Name(name.to_string()))
       }
       "key" => {
-        let key = val.as_str().ok_or(HttpSigError::InvalidComponentParam(
+        let key = val.as_string().ok_or(HttpSigError::InvalidComponentParam(
           "Invalid http field param: key".to_string(),
         ))?;
         Ok(Self::Key(key.to_string()))
@@ -106,10 +106,10 @@ pub(super) fn handle_params_sf(field_values: &mut [String]) -> HttpSigResult<()>
   let parsed_list = field_values
     .iter()
     .map(|v| {
-      if let Ok(list) = Parser::parse_list(v.as_bytes()) {
-        list.serialize_value()
-      } else if let Ok(dict) = Parser::parse_dictionary(v.as_bytes()) {
-        dict.serialize_value()
+      if let Ok(list) = Parser::new(v).parse::<sfv::List>() {
+        list.serialize().ok_or("Failed to serialize structured field value for sf")
+      } else if let Ok(dict) = Parser::new(v).parse::<sfv::Dictionary>() {
+        dict.serialize().ok_or("Failed to serialize structured field value for sf")
       } else {
         Err("invalid structured field value for sf")
       }
@@ -129,7 +129,8 @@ pub(super) fn handle_params_sf(field_values: &mut [String]) -> HttpSigResult<()>
 pub(super) fn handle_params_key_into(field_values: &[String], key: &str) -> HttpSigResult<Vec<String>> {
   let dicts = field_values
     .iter()
-    .map(|v| Parser::parse_dictionary(v.as_bytes()))
+    .map(|v| Parser::new(v.as_str()).parse() as Result<sfv::Dictionary, _>)
+    // Parser::parse_dictionary(v.as_bytes()))
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}")))?;
 
@@ -138,11 +139,12 @@ pub(super) fn handle_params_key_into(field_values: &[String], key: &str) -> Http
     .filter_map(|dict| {
       dict.get(key).map(|v| {
         let sfvalue: sfv::List = vec![v.clone()];
-        sfvalue.serialize_value()
+        // sfvalue.serialize_value()
+        sfvalue.serialize()
       })
     })
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| HttpSigError::InvalidComponentParam(format!("Failed to serialize structured field value: {e}")))?;
+    .collect::<Option<Vec<_>>>()
+    .ok_or_else(|| HttpSigError::InvalidComponentParam(format!("Failed to serialize structured field value")))?;
 
   Ok(found_entries)
 }
@@ -157,19 +159,19 @@ mod tests {
   fn parser_test() {
     // Parsing structured field value of Item type.
     let item_header_input = "12.445;foo=bar";
-    let item = Parser::parse_item(item_header_input.as_bytes()).unwrap();
-    assert_eq!(item.serialize_value().unwrap(), item_header_input);
+    let item = Parser::new(item_header_input).parse::<sfv::Item>().unwrap();
+    assert_eq!(item.serialize(), item_header_input);
 
     // Parsing structured field value of List type.
     let list_header_input = "  1; a=tok, (\"foo\"   \"bar\" );baz, (  )";
-    let list = Parser::parse_list(list_header_input.as_bytes()).unwrap();
-    assert_eq!(list.serialize_value().unwrap(), "1;a=tok, (\"foo\" \"bar\");baz, ()");
+    let list = Parser::new(list_header_input).parse::<sfv::List>().unwrap();
+    assert_eq!(list.serialize().unwrap(), "1;a=tok, (\"foo\" \"bar\");baz, ()");
 
     // Parsing structured field value of Dictionary type.
     let dict_header_input = "a=?0, b, c; foo=bar, rating=1.5, fruits=(apple pear), d";
-    let dict = Parser::parse_dictionary(dict_header_input.as_bytes()).unwrap();
+    let dict = Parser::new(dict_header_input).parse::<sfv::Dictionary>().unwrap();
     assert_eq!(
-      dict.serialize_value().unwrap(),
+      dict.serialize().unwrap(),
       "a=?0, b, c;foo=bar, rating=1.5, fruits=(apple pear), d"
     );
   }

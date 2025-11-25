@@ -45,7 +45,7 @@ bytes = { version = "1.10.1" }
 base64 = { version = "0.22.1" }
 
 # for rfc8941 structured field values
-sfv = { version = "0.10.4" }
+sfv = { version = "0.14.0" }
 
 [dev-dependencies]
 rand-085 = { package = "rand", version = "0.8.5" } # testing only
