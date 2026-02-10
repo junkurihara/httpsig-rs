@@ -6,7 +6,7 @@ use crate::{
   util::has_unique_elements,
 };
 use base64::{engine::general_purpose, Engine as _};
-use rand::Rng;
+use rand::RngExt;
 use sfv::{FieldType, ListEntry, Parser};
 use std::time::{SystemTime, UNIX_EPOCH};
 
