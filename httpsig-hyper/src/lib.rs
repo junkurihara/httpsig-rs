@@ -42,7 +42,9 @@ impl std::str::FromStr for ContentDigestType {
 pub use error::{HyperDigestError, HyperDigestResult, HyperSigError, HyperSigResult};
 pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
-pub use hyper_http::{MessageSignature, MessageSignatureReq, MessageSignatureRes};
+pub use hyper_http::{
+  MessageSignature, MessageSignatureReq, MessageSignatureReqSync, MessageSignatureRes, MessageSignatureResSync,
+};
 
 /* ----------------------------------------------------------------- */
 #[cfg(test)]
@@ -187,5 +189,51 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       .verify_message_signature(&public_key, Some("NotFoundKeyId"), Some(&req))
       .await;
     assert!(verification_res.is_err());
+  }
+
+  #[cfg(feature = "blocking")]
+  #[test]
+  fn test_set_verify_request_sync() {
+    // show usage of set_message_signature_sync and verify_message_signature_sync
+
+    let mut req = futures::executor::block_on(build_request());
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let covered_components = COVERED_COMPONENTS_REQ
+      .iter()
+      .map(|v| message_component::HttpMessageComponentId::try_from(*v))
+      .collect::<Result<Vec<_>, _>>()
+      .unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
+    // set key information, alg and keyid
+    signature_params.set_key_info(&secret_key);
+    // set signature
+    req.set_message_signature_sync(&signature_params, &secret_key, None).unwrap();
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = req.verify_message_signature_sync(&public_key, None);
+    assert!(verification_res.is_ok());
+  }
+
+  #[cfg(feature = "blocking")]
+  #[test]
+  fn test_set_verify_response_sync() {
+    // show usage of set_message_signature_sync and verify_message_signature_sync
+    let req = futures::executor::block_on(build_request());
+    let mut res = futures::executor::block_on(build_response());
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let covered_components = COVERED_COMPONENTS_RES
+      .iter()
+      .map(|v| message_component::HttpMessageComponentId::try_from(*v))
+      .collect::<Result<Vec<_>, _>>()
+      .unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
+    // set key information, alg and keyid
+    signature_params.set_key_info(&secret_key);
+    // set signature
+    res
+      .set_message_signature_sync(&signature_params, &secret_key, None, Some(&req))
+      .unwrap();
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = res.verify_message_signature_sync(&public_key, None, Some(&req));
+    assert!(verification_res.is_ok());
   }
 }
