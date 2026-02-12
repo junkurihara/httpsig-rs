@@ -18,7 +18,7 @@ blocking = ["futures/executor"]
 
 
 [dependencies]
-httpsig = { path = "../httpsig", version = "0.0.20" }
+httpsig = { path = "../httpsig", version = "0.0.21" }
 
 thiserror = { version = "2.0.18" }
 tracing = { version = "0.1.44" }
