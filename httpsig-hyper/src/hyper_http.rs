@@ -135,7 +135,14 @@ pub trait MessageSignatureRes {
 
 /* --------------------------------------- */
 #[cfg(feature = "blocking")]
-/// A trait about http message signature for request with synchronous signing/verifying key
+/// Synchronous counterpart of [`MessageSignatureReq`].
+///
+/// Every method delegates to the corresponding async method via `futures::executor::block_on`.
+///
+/// # Panics
+///
+/// All methods will panic if called from within an async runtime (e.g. a `tokio` task).
+/// Use the async [`MessageSignatureReq`] methods instead when you are already in an async context.
 pub trait MessageSignatureReqSync: MessageSignatureReq {
   fn set_message_signature_sync<T>(
     &mut self,
@@ -170,7 +177,14 @@ pub trait MessageSignatureReqSync: MessageSignatureReq {
 }
 
 #[cfg(feature = "blocking")]
-/// A trait about http message signature for response with synchronous signing/verifying key
+/// Synchronous counterpart of [`MessageSignatureRes`].
+///
+/// Every method delegates to the corresponding async method via `futures::executor::block_on`.
+///
+/// # Panics
+///
+/// All methods will panic if called from within an async runtime (e.g. a `tokio` task).
+/// Use the async [`MessageSignatureRes`] methods instead when you are already in an async context.
 pub trait MessageSignatureResSync: MessageSignatureRes {
   fn set_message_signature_sync<T, B>(
     &mut self,

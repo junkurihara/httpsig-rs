@@ -1,8 +1,24 @@
 //! # httpsig-hyper
 //!
 //! `httpsig-hyper` is a crate that provides a convenient API for `Hyper` users to handle HTTP signatures.
-//! This crate extends hyper's https request and response messages with the ability to generate and verify HTTP signatures.
+//! This crate extends hyper's http request and response messages with the ability to generate and verify HTTP signatures.
 //! Additionally it also provides a way to set and verify content-digest header.
+//!
+//! ## Async-first design
+//!
+//! The primary API is fully async, allowing concurrent processing of multiple signatures via
+//! [`MessageSignatureReq`] and [`MessageSignatureRes`].
+//!
+//! ## Blocking API
+//!
+//! When the `blocking` feature is enabled (on by default), synchronous wrappers are provided via
+//! [`MessageSignatureReqSync`] and [`MessageSignatureResSync`]. These use `futures::executor::block_on`
+//! internally and are intended **exclusively for non-async contexts**.
+//!
+//! # Panics
+//!
+//! Calling any `*_sync` method from within an async runtime (e.g. inside a `tokio::spawn` task)
+//! will panic. If you are already in an async context, use the async methods directly.
 
 mod error;
 mod hyper_content_digest;
