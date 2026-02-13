@@ -14,7 +14,7 @@ use pkcs8::{der::Decode, Document, PrivateKeyInfo};
 use sha2::{Digest, Sha256, Sha384};
 use spki::SubjectPublicKeyInfoRef;
 
-#[cfg(feature = "rsasig")]
+#[cfg(feature = "rsa-signature")]
 use rsa::{
   pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPublicKey},
   pkcs1v15, pss,
@@ -29,7 +29,7 @@ mod algorithm_oids {
   pub const EC: &str = "1.2.840.10045.2.1";
   /// OID for `id-Ed25519`, if you're curious
   pub const Ed25519: &str = "1.3.101.112";
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   /// OID for `id-rsaEncryption`, if you're curious
   pub const rsaEncryption: &str = "1.2.840.113549.1.1.1";
 }
@@ -53,10 +53,10 @@ pub enum SecretKey {
   EcdsaP256Sha256(EcSecretKey<NistP256>),
   /// ed25519
   Ed25519(Ed25519SecretKey),
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   /// rsa-v1_5-sha256
   RsaV1_5Sha256(pkcs1v15::SigningKey<rsa::sha2::Sha256>),
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   RsaPssSha512(pss::SigningKey<rsa::sha2::Sha512>),
 }
 
@@ -81,14 +81,14 @@ impl SecretKey {
         let sk = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(seed)).sk;
         Ok(Self::Ed25519(sk))
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaV1_5Sha256 => {
         debug!("Read RSA private key");
         // read PrivateKeyInfo.private_key as RsaPrivateKey (RFC 3447), which is DER encoded RSAPrivateKey in PKCS#1
         let sk = RsaPrivateKey::from_pkcs1_der(bytes).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
         Ok(Self::RsaV1_5Sha256(pkcs1v15::SigningKey::<rsa::sha2::Sha256>::new(sk)))
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaPssSha512 => {
         debug!("Read RSA-PSS private key");
         // read PrivateKeyInfo.private_key as RsaPrivateKey (RFC 3447), which is DER encoded RSAPrivateKey in PKCS#1
@@ -133,8 +133,15 @@ impl SecretKey {
         &pki.private_key[2..]
       }
       // rsa
-      #[cfg(feature = "rsasig")]
-      algorithm_oids::rsaEncryption => pki.private_key,
+      #[cfg(feature = "rsa-signature")]
+      algorithm_oids::rsaEncryption => {
+        // assert algorithm
+        match alg {
+          AlgorithmName::RsaV1_5Sha256 | AlgorithmName::RsaPssSha512 => {}
+          _ => return Err(HttpSigError::ParsePrivateKeyError("Algorithm mismatch".to_string())),
+        }
+        pki.private_key
+      }
       _ => return Err(HttpSigError::ParsePrivateKeyError("Unsupported algorithm".to_string())),
     };
     let sk = Self::from_bytes(alg, sk_bytes)?;
@@ -156,9 +163,9 @@ impl SecretKey {
       Self::EcdsaP256Sha256(key) => PublicKey::EcdsaP256Sha256(key.public_key()),
       Self::EcdsaP384Sha384(key) => PublicKey::EcdsaP384Sha384(key.public_key()),
       Self::Ed25519(key) => PublicKey::Ed25519(key.public_key()),
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaV1_5Sha256(key) => PublicKey::RsaV1_5Sha256(key.verifying_key()),
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaPssSha512(key) => PublicKey::RsaPssSha512(key.verifying_key()),
     }
   }
@@ -189,13 +196,13 @@ impl super::SigningKey for SecretKey {
         let sig = sk.sign(data, Some(ed25519_compact::Noise::default()));
         Ok(sig.as_ref().to_vec())
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaV1_5Sha256(sk) => {
         debug!("Sign RsaV1_5Sha256");
         let sig = sk.sign_with_rng(&mut rand::rng(), data);
         Ok(sig.to_vec())
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaPssSha512(sk) => {
         debug!("Sign RsaPssSha512");
         let sig = sk.sign_with_rng(&mut rand::rng(), data);
@@ -240,10 +247,10 @@ pub enum PublicKey {
   EcdsaP384Sha384(EcPublicKey<NistP384>),
   /// ed25519
   Ed25519(Ed25519PublicKey),
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   /// rsa-v1_5-sha256
   RsaV1_5Sha256(pkcs1v15::VerifyingKey<rsa::sha2::Sha256>),
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   /// rsa-pss-sha512
   RsaPssSha512(pss::VerifyingKey<rsa::sha2::Sha512>),
 }
@@ -267,17 +274,17 @@ impl PublicKey {
         let pk = ed25519_compact::PublicKey::from_slice(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
         Ok(Self::Ed25519(pk))
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaV1_5Sha256 => {
         debug!("Read RSA public key");
-        // read RsaPublicKey in SubjectPublicKeyInfo format in PKCS#8, which is DER encoded RSAPublicKey in PKCS#1
+        // read RsaPublicKey in PKCS#1 DER format
         let pk = RsaPublicKey::from_pkcs1_der(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
         Ok(Self::RsaV1_5Sha256(pkcs1v15::VerifyingKey::new(pk)))
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaPssSha512 => {
         debug!("Read RSA-PSS public key");
-        // read RsaPublicKey in SubjectPublicKeyInfo format in PKCS#8, which is DER encoded RSAPublicKey in PKCS#1
+        // read RsaPublicKey in PKCS#1 DER format
         let pk = RsaPublicKey::from_pkcs1_der(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
         Ok(Self::RsaPssSha512(pss::VerifyingKey::new(pk)))
       }
@@ -329,11 +336,17 @@ impl PublicKey {
           .ok_or(HttpSigError::ParsePublicKeyError("Invalid public key".to_string()))?
       }
       // rsa
-      #[cfg(feature = "rsasig")]
-      algorithm_oids::rsaEncryption => spki_ref
-        .subject_public_key
-        .as_bytes()
-        .ok_or(HttpSigError::ParsePublicKeyError("Invalid public key".to_string()))?,
+      #[cfg(feature = "rsa-signature")]
+      algorithm_oids::rsaEncryption => {
+        match alg {
+          AlgorithmName::RsaV1_5Sha256 | AlgorithmName::RsaPssSha512 => {}
+          _ => return Err(HttpSigError::ParsePublicKeyError("Algorithm mismatch".to_string())),
+        }
+        spki_ref
+          .subject_public_key
+          .as_bytes()
+          .ok_or(HttpSigError::ParsePublicKeyError("Invalid public key".to_string()))?
+      }
       _ => return Err(HttpSigError::ParsePublicKeyError("Unsupported algorithm".to_string())),
     };
     Self::from_bytes(alg, pk_bytes)
@@ -371,14 +384,14 @@ impl super::VerifyingKey for PublicKey {
         pk.verify(data, &sig)
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaV1_5Sha256(pk) => {
         debug!("Verify RsaV1_5Sha256");
         let sig = pkcs1v15::Signature::try_from(signature).map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
         pk.verify(data, &sig)
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaPssSha512(pk) => {
         debug!("Verify RsaPssSha512");
         let sig = pss::Signature::try_from(signature).map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
@@ -391,7 +404,7 @@ impl super::VerifyingKey for PublicKey {
   /// Create key id, created by SHA-256 hash of the public key bytes, then encoded in base64
   /// - For ECDSA keys, use the uncompressed SEC1 encoding of the public key point as the byte representation.
   /// - For Ed25519 keys, use the raw 32-byte public key.
-  /// - For RSA keys, use the DER encoding of the RSAPublicKey structure (SubjectPublicKeyInfo) as defined in PKCS#1.
+  /// - For RSA keys, use the DER encoding of the RSAPublicKey structure in PKCS#1 format.
   fn key_id(&self) -> String {
     use base64::{engine::general_purpose, Engine as _};
 
@@ -399,18 +412,18 @@ impl super::VerifyingKey for PublicKey {
       Self::EcdsaP256Sha256(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
       Self::EcdsaP384Sha384(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
       Self::Ed25519(vk) => vk.as_ref().to_vec(),
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaV1_5Sha256(vk) => vk
         .as_ref()
         .to_pkcs1_der()
         .map(|der| der.as_bytes().to_vec())
-        .unwrap_or_default(),
-      #[cfg(feature = "rsasig")]
+        .unwrap_or(b"rsa-der-serialization-failed".to_vec()),
+      #[cfg(feature = "rsa-signature")]
       Self::RsaPssSha512(vk) => vk
         .as_ref()
         .to_pkcs1_der()
         .map(|der| der.as_bytes().to_vec())
-        .unwrap_or_default(),
+        .unwrap_or(b"rsa-der-serialization-failed".to_vec()),
     };
     let mut hasher = <Sha256 as Digest>::new();
     hasher.update(&bytes);
@@ -424,9 +437,9 @@ impl super::VerifyingKey for PublicKey {
       Self::EcdsaP256Sha256(_) => AlgorithmName::EcdsaP256Sha256,
       Self::EcdsaP384Sha384(_) => AlgorithmName::EcdsaP384Sha384,
       Self::Ed25519(_) => AlgorithmName::Ed25519,
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaV1_5Sha256(_) => AlgorithmName::RsaV1_5Sha256,
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       Self::RsaPssSha512(_) => AlgorithmName::RsaPssSha512,
     }
   }
@@ -473,7 +486,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 -----END PUBLIC KEY-----
 "##;
 
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   const RSA2048_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCrjtdIxemmmL9V
 wfp7qqwytfRDZqQM6XNWcAi3x+j5dHFFIKKWQktJ7eCTRYQrBwjQs5sb0ieNUYwQ
@@ -503,7 +516,7 @@ KDYy4jUp2TeTPBpqwS24KzFaFx0y2U99TWrzt6sQJr7Y9NlR7S0znc/L7wwFobjr
 XVdlU40OaPP7xs0er/tWVAPY
 -----END PRIVATE KEY-----"##;
 
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   const RSA2048_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq47XSMXpppi/VcH6e6qs
 MrX0Q2akDOlzVnAIt8fo+XRxRSCilkJLSe3gk0WEKwcI0LObG9InjVGMEL0yB+d8
@@ -552,7 +565,7 @@ tQIDAQAB
     assert!(matches!(pk, PublicKey::Ed25519(_)));
   }
 
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   #[test]
   fn test_from_pem_rsa() {
     let sk = SecretKey::from_pem(&AlgorithmName::RsaV1_5Sha256, RSA2048_SECRET_KEY).unwrap();
@@ -591,7 +604,7 @@ tQIDAQAB
     assert!(pk.verify(b"hello", &signature).is_err());
   }
 
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   #[test]
   fn test_sign_verify_rsa() {
     use super::super::{SigningKey, VerifyingKey};
@@ -630,7 +643,7 @@ tQIDAQAB
     Ok(())
   }
 
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   #[test]
   fn test_kid_rsa() -> HttpSigResult<()> {
     use super::super::VerifyingKey;

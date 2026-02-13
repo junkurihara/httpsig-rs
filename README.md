@@ -16,11 +16,11 @@ This crates provides a basic library [httpsig](./httpsig) and [its extension](./
 - [x] HMAC using SHA-256
 - [x] Ed25519
 - [x] ECDSA-P256 using SHA-256
-- [ ] ECDSA-P384 using SHA-384
+- [x] ECDSA-P384 using SHA-384
 - [x] RSASSA-PSS using SHA-512
 - [x] RSASSA-PKCS1-v1_5 using SHA-256
 
-At this point, **RSA signature is non-default** due to [the problem related to the non-constant time operation](https://github.com/RustCrypto/RSA/issues/19), i.e., [Mervin Attack](https://people.redhat.com/~hkario/marvin/). If you want to use RSA signature, please enable the `rsa-signature` feature flag in your `Cargo.toml`.
+At this point, **RSA signature is non-default** due to [the problem related to the non-constant time operation](https://github.com/RustCrypto/RSA/issues/19), i.e., [Marvin Attack](https://people.redhat.com/~hkario/marvin/). If you want to use RSA signature, please enable the `rsa-signature` feature flag in your `Cargo.toml`.
 
 ## Usage of Extension for `hyper` (`httpsig-hyper`)
 
@@ -127,7 +127,7 @@ async fn verifier<B>(res: &Response<B>, sent_req: &Request<B>) -> HttpSigResult<
   // specify algorithm name since we cannot always infer it from key info
   let alg = AlgorithmName::Ed25519; // directly use Ed25519 algorithm
   // or else infer it from the response. Find your public key from IndexMap with alg and key_id pairs
-  // let alg_key_id_map = res.get_alg_key_ids().unwrap()
+  // let alg_key_id_map = res.get_alg_key_ids().unwrap();
   let public_key = PublicKey::from_pem(&alg, PUBLIC_KEY_STRING).unwrap();
   let key_id = public_key.key_id();
 

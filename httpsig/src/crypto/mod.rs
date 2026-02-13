@@ -13,9 +13,9 @@ pub enum AlgorithmName {
   EcdsaP256Sha256,
   EcdsaP384Sha384,
   Ed25519,
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   RsaV1_5Sha256,
-  #[cfg(feature = "rsasig")]
+  #[cfg(feature = "rsa-signature")]
   RsaPssSha512,
 }
 
@@ -26,9 +26,9 @@ impl AlgorithmName {
       AlgorithmName::EcdsaP256Sha256 => "ecdsa-p256-sha256",
       AlgorithmName::EcdsaP384Sha384 => "ecdsa-p384-sha384",
       AlgorithmName::Ed25519 => "ed25519",
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaV1_5Sha256 => "rsa-v1_5-sha256",
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaPssSha512 => "rsa-pss-sha512",
     }
   }
@@ -49,9 +49,9 @@ impl core::str::FromStr for AlgorithmName {
       "ecdsa-p256-sha256" => Ok(Self::EcdsaP256Sha256),
       "ecdsa-p384-sha384" => Ok(Self::EcdsaP384Sha384),
       "ed25519" => Ok(Self::Ed25519),
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       "rsa-v1_5-sha256" => Ok(Self::RsaV1_5Sha256),
-      #[cfg(feature = "rsasig")]
+      #[cfg(feature = "rsa-signature")]
       "rsa-pss-sha512" => Ok(Self::RsaPssSha512),
       _ => Err(HttpSigError::InvalidAlgorithmName(s.to_string())),
     }

@@ -1207,7 +1207,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert_eq!(key_ids[0].1.as_ref().unwrap(), "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
   }
 
-  const P256_SECERT_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+  const P256_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgv7zxW56ojrWwmSo1
 4uOdbVhUfj9Jd+5aZIB9u8gtWnihRANCAARGYsMe0CT6pIypwRvoJlLNs4+cTh2K
 L7fUNb5i6WbKxkpAoO+6T3pMBG5Yw7+8NuGTvvtrZAXduA2giPxQ8zCf
@@ -1226,7 +1226,7 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
     let mut signature_params_eddsa = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params_eddsa.set_key_info(&secret_key_eddsa);
 
-    let secret_key_p256 = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECERT_KEY).unwrap();
+    let secret_key_p256 = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
     let mut signature_params_hmac = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params_hmac.set_key_info(&secret_key_p256);
 
