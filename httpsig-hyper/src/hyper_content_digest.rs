@@ -141,7 +141,7 @@ where
       .map_err(|_e| HyperDigestError::HttpBodyError("Failed to get body bytes".to_string()))?;
     let digest = derive_digest(&body_bytes, &cd_type);
 
-    if matches!(digest, _expected_digest) {
+    if digest == _expected_digest {
       let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
       let res = Request::from_parts(header, new_body);
       Ok(res)
@@ -192,7 +192,7 @@ where
       .map_err(|_e| HyperDigestError::HttpBodyError("Failed to get body bytes".to_string()))?;
     let digest = derive_digest(&body_bytes, &cd_type);
 
-    if matches!(digest, _expected_digest) {
+    if digest == _expected_digest {
       let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
       let res = Response::from_parts(header, new_body);
       Ok(res)
