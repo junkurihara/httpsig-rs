@@ -600,7 +600,8 @@ fn get_alg_key_ids_inner<B>(
   let signature_headers_map = extract_signature_headers_with_name(req_or_res)?;
   let res = signature_headers_map
     .iter()
-    .filter_map(|(name, headers)| {
+    .map(|(name, headers)| {
+      // Unknown or unsupported algorithm strings are mapped to None
       let alg = headers
         .signature_params()
         .alg
@@ -610,7 +611,7 @@ fn get_alg_key_ids_inner<B>(
         .ok()
         .flatten();
       let key_id = headers.signature_params().keyid.clone();
-      Some((name.clone(), (alg, key_id)))
+      (name.clone(), (alg, key_id))
     })
     .collect();
   Ok(res)
