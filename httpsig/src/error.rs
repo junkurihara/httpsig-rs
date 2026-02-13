@@ -57,6 +57,10 @@ pub enum HttpSigError {
   #[error("Expired signature params: {0}")]
   ExpiredSignatureParams(String),
 
+  /// Invalid algorithm name
+  #[error("Invalid algorithm name: {0}")]
+  InvalidAlgorithmName(String),
+
   /* ----- Other errors ----- */
   /// NotYetImplemented
   #[error("Not yet implemented: {0}")]

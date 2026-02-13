@@ -43,7 +43,7 @@ async fn sender_ed25519(req: &mut Request<BoxBody>) {
   let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
 
   // set signing/verifying key information, alg and keyid with ed25519
-  let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+  let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
   signature_params.set_key_info(&secret_key);
 
   // set signature with custom signature name
@@ -65,7 +65,7 @@ async fn sender_hs256(req: &mut Request<BoxBody>) {
   let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
 
   // set signing/verifying key information, alg and keyid and random noce with hmac-sha256
-  let shared_key = SharedKey::from_base64(HMACSHA256_SECRET_KEY).unwrap();
+  let shared_key = SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
   signature_params.set_key_info(&shared_key);
   signature_params.set_random_nonce();
 
@@ -81,7 +81,7 @@ where
   B: http_body::Body + Send + Sync,
 {
   println!("Verifying ED25519 signature");
-  let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+  let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
   let key_id = public_key.key_id();
 
   // verify signature with checking key_id
@@ -94,7 +94,7 @@ where
   B: http_body::Body + Send + Sync,
 {
   println!("Verifying HMAC-SHA256 signature");
-  let shared_key = SharedKey::from_base64(HMACSHA256_SECRET_KEY).unwrap();
+  let shared_key = SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
   let key_id = VerifyingKey::key_id(&shared_key);
 
   // verify signature with checking key_id

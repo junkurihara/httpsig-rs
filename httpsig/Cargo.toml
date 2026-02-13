@@ -12,6 +12,10 @@ rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+rsa-signature = ["rsa"]
+
 [dependencies]
 thiserror = { version = "2.0.18" }
 tracing = { version = "0.1.44" }
@@ -40,6 +44,12 @@ p384 = { version = "0.13.1", default-features = false, features = [
 hmac = { version = "0.12.1" }
 sha2 = { version = "0.10.9", default-features = false }
 bytes = { version = "1.11.1" }
+
+# rsa is optional
+rsa = { version = "0.10.0-rc.15", default-features = false, optional = true, features = [
+  "encoding",
+  "sha2",
+] }
 
 # encoding
 base64 = { version = "0.22.1" }
