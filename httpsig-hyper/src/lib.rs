@@ -122,7 +122,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     let mut req = build_request().await;
 
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
 
     let covered_components = COVERED_COMPONENTS_REQ
       .iter()
@@ -145,7 +145,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(signature.starts_with(r##"custom_sig_name=:"##));
 
     // verify without checking key_id
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    // get algorithm from signature params
+    let (alg, _key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
+    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature(&public_key, None).await;
     assert!(verification_res.is_ok());
 
@@ -165,7 +167,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let req = build_request().await;
     let mut res = build_response().await;
 
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
 
     let covered_components = COVERED_COMPONENTS_RES
       .iter()
@@ -187,8 +189,10 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(signature_input.starts_with(r##"custom_sig_name=("##));
     assert!(signature.starts_with(r##"custom_sig_name=:"##));
 
-    // verify without checking key_id, request must be provided if `req` field param is included
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    // verify without checking key_id, request must be provided if `req` field param is included in signature params
+    // get algorithm from signature params
+    let (alg, _key_id) = res.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
+    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
     assert!(verification_res.is_ok());
     let verification_res = res
@@ -213,7 +217,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     // show usage of set_message_signature_sync and verify_message_signature_sync
 
     let mut req = futures::executor::block_on(build_request());
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let covered_components = COVERED_COMPONENTS_REQ
       .iter()
       .map(|v| message_component::HttpMessageComponentId::try_from(*v))
@@ -224,7 +228,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     signature_params.set_key_info(&secret_key);
     // set signature
     req.set_message_signature_sync(&signature_params, &secret_key, None).unwrap();
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+
+    let (alg, _key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
+    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature_sync(&public_key, None);
     assert!(verification_res.is_ok());
   }
@@ -235,7 +241,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     // show usage of set_message_signature_sync and verify_message_signature_sync
     let req = futures::executor::block_on(build_request());
     let mut res = futures::executor::block_on(build_response());
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let covered_components = COVERED_COMPONENTS_RES
       .iter()
       .map(|v| message_component::HttpMessageComponentId::try_from(*v))
@@ -248,7 +254,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     res
       .set_message_signature_sync(&signature_params, &secret_key, None, Some(&req))
       .unwrap();
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+
+    let (alg, _key_id) = res.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
+    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = res.verify_message_signature_sync(&public_key, None, Some(&req));
     assert!(verification_res.is_ok());
   }
