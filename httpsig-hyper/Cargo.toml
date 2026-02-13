@@ -12,16 +12,21 @@ rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-httpsig = { path = "../httpsig", version = "0.0.20" }
+[features]
+default = ["blocking"]
+blocking = ["futures/executor"]
 
-thiserror = { version = "2.0.16" }
-tracing = { version = "0.1.41" }
+
+[dependencies]
+httpsig = { path = "../httpsig", version = "0.0.21" }
+
+thiserror = { version = "2.0.18" }
+tracing = { version = "0.1.44" }
 futures = { version = "0.3.31", default-features = false, features = [
   "std",
   "async-await",
 ] }
-indexmap = { version = "2.11.1" }
+indexmap = { version = "2.11.4" }
 
 # content digest with rfc8941 structured field values
 sha2 = { version = "0.10.9", default-features = false }
@@ -31,14 +36,14 @@ sfv = { version = "0.14.0" }
 base64 = { version = "0.22.1" }
 
 # for request and response headers
-http = { version = "1.3.1" }
+http = { version = "1.4.0" }
 http-body = { version = "1.0.1" }
 http-body-util = { version = "0.1.3" }
-bytes = { version = "1.10.1" }
+bytes = { version = "1.11.1" }
 
 
 [dev-dependencies]
-tokio = { version = "1.47.1", default-features = false, features = [
+tokio = { version = "1.49.0", default-features = false, features = [
   "macros",
   "rt-multi-thread",
 ] } # testing only
