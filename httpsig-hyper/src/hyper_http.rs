@@ -24,7 +24,7 @@ pub trait MessageSignature {
   fn has_message_signature(&self) -> bool;
 
   /// Extract all key ids for signature bases contained in the request headers
-  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (AlgorithmName, KeyId)>, Self::Error>;
+  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>, Self::Error>;
 
   /// Extract all signature params used to generate signature bases contained in the request headers
   fn get_signature_params(&self) -> Result<IndexMap<SignatureName, HttpSignatureParams>, Self::Error>;
@@ -243,7 +243,7 @@ where
   }
 
   /// Extract all signature bases contained in the request headers
-  fn get_alg_key_ids(&self) -> HyperSigResult<IndexMap<SignatureName, (AlgorithmName, KeyId)>> {
+  fn get_alg_key_ids(&self) -> HyperSigResult<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>> {
     let req_or_res = RequestOrResponse::Request(self);
     get_alg_key_ids_inner(&req_or_res)
   }
@@ -358,7 +358,7 @@ where
   }
 
   /// Extract all key ids for signature bases contained in the response headers
-  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (AlgorithmName, KeyId)>, Self::Error> {
+  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>, Self::Error> {
     let req_or_res = RequestOrResponse::Response(self);
     get_alg_key_ids_inner(&req_or_res)
   }
@@ -596,7 +596,7 @@ fn has_message_signature_inner(headers: &HeaderMap) -> bool {
 /// get key ids inner function
 fn get_alg_key_ids_inner<B>(
   req_or_res: &RequestOrResponse<B>,
-) -> HyperSigResult<IndexMap<SignatureName, (AlgorithmName, KeyId)>> {
+) -> HyperSigResult<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>> {
   let signature_headers_map = extract_signature_headers_with_name(req_or_res)?;
   let res = signature_headers_map
     .iter()
@@ -610,11 +610,7 @@ fn get_alg_key_ids_inner<B>(
         .ok()
         .flatten();
       let key_id = headers.signature_params().keyid.clone();
-      if let (Some(alg), Some(key_id)) = (alg, key_id) {
-        Some((name.clone(), (alg, key_id)))
-      } else {
-        None
-      }
+      Some((name.clone(), (alg, key_id)))
     })
     .collect();
   Ok(res)
@@ -1185,7 +1181,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     let org_key_id = VerifyingKey::key_id(&secret_key);
     let (alg, key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
-    assert_eq!(org_key_id, *key_id);
+    let alg = alg.unwrap();
+    let key_id = key_id.unwrap();
+    assert_eq!(org_key_id, key_id);
     let verification_key = SharedKey::from_base64(&alg, HMACSHA256_SECRET_KEY).unwrap();
     let verification_res = req.verify_message_signature(&verification_key, Some(&key_id)).await;
     assert!(verification_res.is_ok());
@@ -1204,8 +1202,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
     let key_ids = req.get_alg_key_ids().unwrap();
     assert_eq!(key_ids.len(), 1);
-    assert_eq!(key_ids[0].0, AlgorithmName::Ed25519);
-    assert_eq!(key_ids[0].1, "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
+    assert_eq!(key_ids[0].0.as_ref().unwrap(), &AlgorithmName::Ed25519);
+    assert_eq!(key_ids[0].1.as_ref().unwrap(), "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
   }
 
   const P256_SECERT_KEY: &str = r##"-----BEGIN PRIVATE KEY-----

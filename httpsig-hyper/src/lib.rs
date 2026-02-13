@@ -147,7 +147,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     // verify without checking key_id
     // get algorithm from signature params
     let (alg, _key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
-    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&alg.unwrap(), EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature(&public_key, None).await;
     assert!(verification_res.is_ok());
 
@@ -192,7 +192,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     // verify without checking key_id, request must be provided if `req` field param is included in signature params
     // get algorithm from signature params
     let (alg, _key_id) = res.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
-    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&alg.unwrap(), EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
     assert!(verification_res.is_ok());
     let verification_res = res
@@ -230,7 +230,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     req.set_message_signature_sync(&signature_params, &secret_key, None).unwrap();
 
     let (alg, _key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
-    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&alg.unwrap(), EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature_sync(&public_key, None);
     assert!(verification_res.is_ok());
   }
@@ -256,7 +256,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       .unwrap();
 
     let (alg, _key_id) = res.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
-    let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&alg.unwrap(), EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = res.verify_message_signature_sync(&public_key, None, Some(&req));
     assert!(verification_res.is_ok());
   }

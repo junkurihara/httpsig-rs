@@ -127,7 +127,7 @@ async fn verifier<B>(res: &Response<B>, sent_req: &Request<B>) -> HttpSigResult<
   // specify algorithm name since we cannot always infer it from key info
   let alg = AlgorithmName::Ed25519; // directly use Ed25519 algorithm
   // or else infer it from the response. Find your public key from IndexMap with alg and key_id pairs
-  // let alg_key_id_map = res.get_alg_key_ids().unwrap
+  // let alg_key_id_map = res.get_alg_key_ids().unwrap()
   let public_key = PublicKey::from_pem(&alg, PUBLIC_KEY_STRING).unwrap();
   let key_id = public_key.key_id();
 
