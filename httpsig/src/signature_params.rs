@@ -266,7 +266,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[test]
   fn test_set_key_info() {
     let mut params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
-    params.set_key_info(&SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap());
+    params.set_key_info(&SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap());
     assert_eq!(params.keyid, Some(EDDSA_KEY_ID.to_string()));
     assert_eq!(params.alg, Some("ed25519".to_string()));
   }

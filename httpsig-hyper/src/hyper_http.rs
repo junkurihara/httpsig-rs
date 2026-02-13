@@ -5,10 +5,10 @@ use httpsig::prelude::{
   message_component::{
     DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName, HttpMessageComponentParam,
   },
-  HttpSignatureBase, HttpSignatureHeaders, HttpSignatureHeadersMap, HttpSignatureParams, SigningKey, VerifyingKey,
+  AlgorithmName, HttpSignatureBase, HttpSignatureHeaders, HttpSignatureHeadersMap, HttpSignatureParams, SigningKey, VerifyingKey,
 };
 use indexmap::{IndexMap, IndexSet};
-use std::future::Future;
+use std::{future::Future, str::FromStr};
 
 /// A type alias for the signature name
 type SignatureName = String;
@@ -24,7 +24,7 @@ pub trait MessageSignature {
   fn has_message_signature(&self) -> bool;
 
   /// Extract all key ids for signature bases contained in the request headers
-  fn get_key_ids(&self) -> Result<IndexMap<SignatureName, KeyId>, Self::Error>;
+  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>, Self::Error>;
 
   /// Extract all signature params used to generate signature bases contained in the request headers
   fn get_signature_params(&self) -> Result<IndexMap<SignatureName, HttpSignatureParams>, Self::Error>;
@@ -243,9 +243,9 @@ where
   }
 
   /// Extract all signature bases contained in the request headers
-  fn get_key_ids(&self) -> HyperSigResult<IndexMap<SignatureName, KeyId>> {
+  fn get_alg_key_ids(&self) -> HyperSigResult<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>> {
     let req_or_res = RequestOrResponse::Request(self);
-    get_key_ids_inner(&req_or_res)
+    get_alg_key_ids_inner(&req_or_res)
   }
 
   /// Extract all signature params used to generate signature bases contained in the request headers
@@ -358,9 +358,9 @@ where
   }
 
   /// Extract all key ids for signature bases contained in the response headers
-  fn get_key_ids(&self) -> Result<IndexMap<SignatureName, KeyId>, Self::Error> {
+  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>, Self::Error> {
     let req_or_res = RequestOrResponse::Response(self);
-    get_key_ids_inner(&req_or_res)
+    get_alg_key_ids_inner(&req_or_res)
   }
 
   /// Extract all signature params used to generate signature bases contained in the response headers
@@ -594,11 +594,25 @@ fn has_message_signature_inner(headers: &HeaderMap) -> bool {
 }
 
 /// get key ids inner function
-fn get_key_ids_inner<B>(req_or_res: &RequestOrResponse<B>) -> HyperSigResult<IndexMap<SignatureName, KeyId>> {
+fn get_alg_key_ids_inner<B>(
+  req_or_res: &RequestOrResponse<B>,
+) -> HyperSigResult<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>> {
   let signature_headers_map = extract_signature_headers_with_name(req_or_res)?;
   let res = signature_headers_map
     .iter()
-    .filter_map(|(name, headers)| headers.signature_params().keyid.clone().map(|key_id| (name.clone(), key_id)))
+    .map(|(name, headers)| {
+      // Unknown or unsupported algorithm strings are mapped to None
+      let alg = headers
+        .signature_params()
+        .alg
+        .clone()
+        .map(|a| AlgorithmName::from_str(&a))
+        .transpose()
+        .ok()
+        .flatten();
+      let key_id = headers.signature_params().keyid.clone();
+      (name.clone(), (alg, key_id))
+    })
     .collect();
   Ok(res)
 }
@@ -904,7 +918,7 @@ mod tests {
     *,
   };
   use http_body_util::Full;
-  use httpsig::prelude::{PublicKey, SecretKey, SharedKey};
+  use httpsig::prelude::{AlgorithmName, PublicKey, SecretKey, SharedKey};
 
   type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, HyperDigestError>;
 
@@ -1053,7 +1067,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[tokio::test]
   async fn test_set_verify_message_signature_req() {
     let mut req = build_request().await;
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params.set_key_info(&secret_key);
 
@@ -1062,7 +1076,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(signature_input.starts_with(r##"sig=("@method" "date" "content-type" "content-digest")"##));
     // let signature = req.headers().get("signature").unwrap().to_str().unwrap();
 
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature(&public_key, None).await;
     assert!(verification_res.is_ok());
   }
@@ -1072,7 +1086,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     let req = build_request().await;
     let mut res = build_response().await;
 
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
 
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_res()).unwrap();
     signature_params.set_key_info(&secret_key);
@@ -1090,7 +1104,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(signature_input.starts_with(r##"sig=("@status" "@method";req "date" "content-type" "content-digest";req)"##));
     // let signature = req.headers().get("signature").unwrap().to_str().unwrap();
 
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
     assert!(verification_res.is_ok());
   }
@@ -1098,7 +1112,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[tokio::test]
   async fn test_expired_signature() {
     let mut req = build_request().await;
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params.set_key_info(&secret_key);
     let created = signature_params.created.unwrap();
@@ -1107,7 +1121,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
 
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature(&public_key, None).await;
     assert!(verification_res.is_err());
   }
@@ -1115,7 +1129,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[tokio::test]
   async fn test_set_verify_with_signature_name() {
     let mut req = build_request().await;
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params.set_key_info(&secret_key);
 
@@ -1129,7 +1143,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert_eq!(signature_headers_map.len(), 1);
     assert_eq!(signature_headers_map[0].signature_name(), "custom_sig_name");
 
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature(&public_key, None).await;
     assert!(verification_res.is_ok());
   }
@@ -1137,13 +1151,13 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[tokio::test]
   async fn test_set_verify_with_key_id() {
     let mut req = build_request().await;
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params.set_key_info(&secret_key);
 
     req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
 
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let key_id = public_key.key_id();
     let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await;
     assert!(verification_res.is_ok());
@@ -1158,7 +1172,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[tokio::test]
   async fn test_set_verify_with_key_id_hmac_sha256() {
     let mut req = build_request().await;
-    let secret_key = SharedKey::from_base64(HMACSHA256_SECRET_KEY).unwrap();
+    let secret_key = SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params.set_key_info(&secret_key);
     // Random nonce is highly recommended for HMAC
@@ -1166,28 +1180,34 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
 
-    let key_id = VerifyingKey::key_id(&secret_key);
-    let verification_res = req.verify_message_signature(&secret_key, Some(&key_id)).await;
+    let org_key_id = VerifyingKey::key_id(&secret_key);
+    let (alg, key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
+    let alg = alg.unwrap();
+    let key_id = key_id.unwrap();
+    assert_eq!(org_key_id, key_id);
+    let verification_key = SharedKey::from_base64(&alg, HMACSHA256_SECRET_KEY).unwrap();
+    let verification_res = req.verify_message_signature(&verification_key, Some(&key_id)).await;
     assert!(verification_res.is_ok());
 
-    let verification_res = req.verify_message_signature(&secret_key, Some("NotFoundKeyId")).await;
+    let verification_res = req.verify_message_signature(&verification_key, Some("NotFoundKeyId")).await;
     assert!(verification_res.is_err());
   }
 
   #[tokio::test]
-  async fn test_get_key_ids() {
+  async fn test_get_alg_key_ids() {
     let mut req = build_request().await;
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params.set_key_info(&secret_key);
 
     req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
-    let key_ids = req.get_key_ids().unwrap();
+    let key_ids = req.get_alg_key_ids().unwrap();
     assert_eq!(key_ids.len(), 1);
-    assert_eq!(key_ids[0], "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
+    assert_eq!(key_ids[0].0.as_ref().unwrap(), &AlgorithmName::Ed25519);
+    assert_eq!(key_ids[0].1.as_ref().unwrap(), "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
   }
 
-  const P256_SECERT_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
+  const P256_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgv7zxW56ojrWwmSo1
 4uOdbVhUfj9Jd+5aZIB9u8gtWnihRANCAARGYsMe0CT6pIypwRvoJlLNs4+cTh2K
 L7fUNb5i6WbKxkpAoO+6T3pMBG5Yw7+8NuGTvvtrZAXduA2giPxQ8zCf
@@ -1202,11 +1222,11 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
   async fn test_set_verify_multiple_signatures() {
     let mut req = build_request().await;
 
-    let secret_key_eddsa = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key_eddsa = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params_eddsa = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params_eddsa.set_key_info(&secret_key_eddsa);
 
-    let secret_key_p256 = SecretKey::from_pem(P256_SECERT_KEY).unwrap();
+    let secret_key_p256 = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
     let mut signature_params_hmac = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params_hmac.set_key_info(&secret_key_p256);
 
@@ -1217,8 +1237,8 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
 
     req.set_message_signatures(params_key_name).await.unwrap();
 
-    let public_key_eddsa = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
-    let public_key_p256 = PublicKey::from_pem(P256_PUBLIC_KEY).unwrap();
+    let public_key_eddsa = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
+    let public_key_p256 = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY).unwrap();
     let key_id_eddsa = public_key_eddsa.key_id();
     let key_id_p256 = public_key_p256.key_id();
 
@@ -1239,13 +1259,13 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
   #[test]
   fn test_blocking_set_verify_message_signature_req() {
     let mut req = futures::executor::block_on(build_request());
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
     signature_params.set_key_info(&secret_key);
 
     req.set_message_signature_sync(&signature_params, &secret_key, None).unwrap();
 
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = req.verify_message_signature_sync(&public_key, None);
     assert!(verification_res.is_ok());
   }
@@ -1255,14 +1275,14 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
   fn test_blocking_set_verify_message_signature_res() {
     let req = futures::executor::block_on(build_request());
     let mut res = futures::executor::block_on(build_response());
-    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_res()).unwrap();
     signature_params.set_key_info(&secret_key);
     res
       .set_message_signature_sync(&signature_params, &secret_key, None, Some(&req))
       .unwrap();
 
-    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = res.verify_message_signature_sync(&public_key, None, Some(&req));
     assert!(verification_res.is_ok());
   }

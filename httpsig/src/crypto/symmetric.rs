@@ -20,10 +20,16 @@ pub enum SharedKey {
 
 impl SharedKey {
   /// Create a new shared key from base64 encoded string
-  pub fn from_base64(key: &str) -> HttpSigResult<Self> {
+  pub fn from_base64(alg: &AlgorithmName, key: &str) -> HttpSigResult<Self> {
     debug!("Create SharedKey from base64 string");
     let key = general_purpose::STANDARD.decode(key)?;
-    Ok(SharedKey::HmacSha256(key))
+    match alg {
+      AlgorithmName::HmacSha256 => Ok(SharedKey::HmacSha256(key)),
+      _ => Err(HttpSigError::InvalidAlgorithmName(format!(
+        "Unsupported algorithm for SharedKey: {}",
+        alg
+      ))),
+    }
   }
 }
 
@@ -58,7 +64,8 @@ impl super::VerifyingKey for SharedKey {
         debug!("Verify HmacSha256");
         let mut mac = HmacSha256::new_from_slice(key).unwrap();
         mac.update(data);
-        mac.verify_slice(expected_mac)
+        mac
+          .verify_slice(expected_mac)
           .map_err(|_| HttpSigError::InvalidSignature("Invalid MAC".to_string()))
       }
     }

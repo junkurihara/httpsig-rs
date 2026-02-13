@@ -27,7 +27,8 @@ If you need to verify the body of a given message when `content-digest` is cover
 
 ```rust
 // first verifies the signature according to `signature-input` header
-let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+let alg = AlgorithmName::Ed25519;
+let public_key = PublicKey::from_pem(&alg, EDDSA_PUBLIC_KEY).unwrap();
 let signature_verification = req.verify_message_signature(&public_key, None).await;
 assert!(verification_res.is_ok());
 

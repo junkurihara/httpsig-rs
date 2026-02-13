@@ -16,13 +16,11 @@ This crates provides a basic library [httpsig](./httpsig) and [its extension](./
 - [x] HMAC using SHA-256
 - [x] Ed25519
 - [x] ECDSA-P256 using SHA-256
-- [ ] ECDSA-P384 using SHA-384
+- [x] ECDSA-P384 using SHA-384
+- [x] RSASSA-PSS using SHA-512
+- [x] RSASSA-PKCS1-v1_5 using SHA-256
 
-~~- [ ] RSASSA-PSS using SHA-512~~
-
-~~- [ ] RSASSA-PKCS1-v1_5 using SHA-256~~
-
-At this point, we have no plan to support RSA signature due to [the problem related to the non-constant time operation](https://github.com/RustCrypto/RSA/issues/19), i.e., [Mervin Attack](https://people.redhat.com/~hkario/marvin/).
+At this point, **RSA signature is non-default** due to [the problem related to the non-constant time operation](https://github.com/RustCrypto/RSA/issues/19), i.e., [Marvin Attack](https://people.redhat.com/~hkario/marvin/). If you want to use RSA signature, please enable the `rsa-signature` feature flag in your `Cargo.toml`.
 
 ## Usage of Extension for `hyper` (`httpsig-hyper`)
 
@@ -48,8 +46,11 @@ async fn signer<B>(&mut req: Request<B>) -> HttpSigResult<()> {
     .unwrap();
   let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
 
+  // specify algorithm name since we cannot always infer it from key info
+  let alg = AlgorithmName::Ed25519;
+
   // set signing/verifying key information, alg and keyid
-  let secret_key = SecretKey::from_pem(SECRET_KEY_STRING).unwrap();
+  let secret_key = SecretKey::from_pem(&alg, SECRET_KEY_STRING).unwrap();
   signature_params.set_key_info(&secret_key);
 
   req
@@ -59,7 +60,11 @@ async fn signer<B>(&mut req: Request<B>) -> HttpSigResult<()> {
 
 /// Validation function that verifies a request with a signature
 async fn verifier<B>(req: &Request<B>) -> HttpSigResult<SignatureName> {
-  let public_key = PublicKey::from_pem(PUBLIC_KEY_STRING).unwrap();
+  // specify algorithm name since we cannot always infer it from key info
+  let alg = AlgorithmName::Ed25519; // directly use Ed25519 algorithm
+  // or else infer it from the request. Find your public key from IndexMap with alg and key_id pairs
+  // let alg_key_id_map = req.get_alg_key_ids().unwrap();
+  let public_key = PublicKey::from_pem(&alg, PUBLIC_KEY_STRING).unwrap();
   let key_id = public_key.key_id();
 
   // verify signature with checking key_id
@@ -105,8 +110,11 @@ async fn signer<B>(&mut res: Response<B>, corresponding_req: &Request<B>) -> Htt
     .unwrap();
   let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
 
+  // specify algorithm name since we cannot always infer it from key info
+  let alg = AlgorithmName::Ed25519;
+
   // set signing/verifying key information, alg and keyid
-  let secret_key = SecretKey::from_pem(SECRET_KEY_STRING).unwrap();
+  let secret_key = SecretKey::from_pem(&alg, SECRET_KEY_STRING).unwrap();
   signature_params.set_key_info(&secret_key);
 
   req
@@ -116,7 +124,11 @@ async fn signer<B>(&mut res: Response<B>, corresponding_req: &Request<B>) -> Htt
 
 /// Validation function that verifies a response with a signature from response itself and sent request
 async fn verifier<B>(res: &Response<B>, sent_req: &Request<B>) -> HttpSigResult<SignatureName> {
-  let public_key = PublicKey::from_pem(PUBLIC_KEY_STRING).unwrap();
+  // specify algorithm name since we cannot always infer it from key info
+  let alg = AlgorithmName::Ed25519; // directly use Ed25519 algorithm
+  // or else infer it from the response. Find your public key from IndexMap with alg and key_id pairs
+  // let alg_key_id_map = res.get_alg_key_ids().unwrap();
+  let public_key = PublicKey::from_pem(&alg, PUBLIC_KEY_STRING).unwrap();
   let key_id = public_key.key_id();
 
   // verify signature with checking key_id
