@@ -134,6 +134,103 @@ pub trait MessageSignatureRes {
 }
 
 /* --------------------------------------- */
+#[cfg(feature = "blocking")]
+/// Synchronous counterpart of [`MessageSignatureReq`].
+///
+/// Every method delegates to the corresponding async method via `futures::executor::block_on`.
+///
+/// # Panics
+///
+/// All methods will panic if called from within an async runtime (e.g. a `tokio` task).
+/// Use the async [`MessageSignatureReq`] methods instead when you are already in an async context.
+pub trait MessageSignatureReqSync: MessageSignatureReq {
+  fn set_message_signature_sync<T>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    signing_key: &T,
+    signature_name: Option<&str>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync;
+
+  fn set_message_signatures_sync<T>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync;
+
+  fn verify_message_signature_sync<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<SignatureName, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync;
+
+  fn verify_message_signatures_sync<T>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync;
+}
+
+#[cfg(feature = "blocking")]
+/// Synchronous counterpart of [`MessageSignatureRes`].
+///
+/// Every method delegates to the corresponding async method via `futures::executor::block_on`.
+///
+/// # Panics
+///
+/// All methods will panic if called from within an async runtime (e.g. a `tokio` task).
+/// Use the async [`MessageSignatureRes`] methods instead when you are already in an async context.
+pub trait MessageSignatureResSync: MessageSignatureRes {
+  fn set_message_signature_sync<T, B>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    signing_key: &T,
+    signature_name: Option<&str>,
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+    B: Sync;
+
+  fn set_message_signatures_sync<T, B>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+    B: Sync;
+
+  fn verify_message_signature_sync<T, B>(
+    &self,
+    verifying_key: &T,
+    key_id: Option<&str>,
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<SignatureName, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+    B: Sync;
+
+  fn verify_message_signatures_sync<T, B>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+    B: Sync;
+}
+
+/* --------------------------------------- */
 impl<D> MessageSignature for Request<D>
 where
   D: Send + Body + Sync,
@@ -375,6 +472,117 @@ where
   ) -> Result<IndexMap<SignatureName, (HttpSignatureBase, HttpSignatureHeaders)>, Self::Error> {
     let req_or_res = RequestOrResponse::Response(self);
     extract_signatures_inner(&req_or_res, req_for_param)
+  }
+}
+
+/* --------------------------------------- */
+#[cfg(feature = "blocking")]
+impl<D> MessageSignatureReqSync for Request<D>
+where
+  D: Send + Body + Sync,
+{
+  fn set_message_signature_sync<T>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    signing_key: &T,
+    signature_name: Option<&str>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    futures::executor::block_on(self.set_message_signature(signature_params, signing_key, signature_name))
+  }
+
+  fn set_message_signatures_sync<T>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    futures::executor::block_on(self.set_message_signatures(params_key_name))
+  }
+
+  fn verify_message_signature_sync<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<SignatureName, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    futures::executor::block_on(self.verify_message_signature(verifying_key, key_id))
+  }
+
+  fn verify_message_signatures_sync<T>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    futures::executor::block_on(self.verify_message_signatures(key_and_id))
+  }
+}
+
+#[cfg(feature = "blocking")]
+impl<D> MessageSignatureResSync for Response<D>
+where
+  D: Send + Body + Sync,
+{
+  fn set_message_signature_sync<T, B>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    signing_key: &T,
+    signature_name: Option<&str>,
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+    B: Sync,
+  {
+    futures::executor::block_on(self.set_message_signature(signature_params, signing_key, signature_name, req_for_param))
+  }
+
+  fn set_message_signatures_sync<T, B>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+    B: Sync,
+  {
+    futures::executor::block_on(self.set_message_signatures(params_key_name, req_for_param))
+  }
+
+  fn verify_message_signature_sync<T, B>(
+    &self,
+    verifying_key: &T,
+    key_id: Option<&str>,
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<SignatureName, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+    B: Sync,
+  {
+    futures::executor::block_on(self.verify_message_signature(verifying_key, key_id, req_for_param))
+  }
+
+  fn verify_message_signatures_sync<T, B>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+    B: Sync,
+  {
+    futures::executor::block_on(self.verify_message_signatures(key_and_id, req_for_param))
   }
 }
 
@@ -1025,5 +1233,37 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
     assert!(verification_res.len() == 2 && verification_res.iter().all(|r| r.is_ok()));
     assert!(verification_res[0].as_ref().unwrap() == "eddsa_sig");
     assert!(verification_res[1].as_ref().unwrap() == "p256_sig");
+  }
+
+  #[cfg(feature = "blocking")]
+  #[test]
+  fn test_blocking_set_verify_message_signature_req() {
+    let mut req = futures::executor::block_on(build_request());
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    req.set_message_signature_sync(&signature_params, &secret_key, None).unwrap();
+
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = req.verify_message_signature_sync(&public_key, None);
+    assert!(verification_res.is_ok());
+  }
+
+  #[cfg(feature = "blocking")]
+  #[test]
+  fn test_blocking_set_verify_message_signature_res() {
+    let req = futures::executor::block_on(build_request());
+    let mut res = futures::executor::block_on(build_response());
+    let secret_key = SecretKey::from_pem(EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_res()).unwrap();
+    signature_params.set_key_info(&secret_key);
+    res
+      .set_message_signature_sync(&signature_params, &secret_key, None, Some(&req))
+      .unwrap();
+
+    let public_key = PublicKey::from_pem(EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = res.verify_message_signature_sync(&public_key, None, Some(&req));
+    assert!(verification_res.is_ok());
   }
 }
