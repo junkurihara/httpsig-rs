@@ -134,7 +134,7 @@ where
     Self: Sized,
   {
     let header_map = self.headers();
-    let (cd_type, _expected_digest) = extract_content_digest(header_map).await?;
+    let (cd_type, expected_digest) = extract_content_digest(header_map).await?;
     let (header, body) = self.into_parts();
     let body_bytes = body
       .into_bytes()
@@ -143,7 +143,7 @@ where
     let digest = derive_digest(&body_bytes, &cd_type);
 
     // Use constant time equality check to prevent timing attacks
-    if is_equal_digest(&digest, &_expected_digest) {
+    if is_equal_digest(&digest, &expected_digest) {
       let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
       let res = Request::from_parts(header, new_body);
       Ok(res)
@@ -186,7 +186,7 @@ where
     Self: Sized,
   {
     let header_map = self.headers();
-    let (cd_type, _expected_digest) = extract_content_digest(header_map).await?;
+    let (cd_type, expected_digest) = extract_content_digest(header_map).await?;
     let (header, body) = self.into_parts();
     let body_bytes = body
       .into_bytes()
@@ -195,7 +195,7 @@ where
     let digest = derive_digest(&body_bytes, &cd_type);
 
     // Use constant time equality check to prevent timing attacks
-    if is_equal_digest(&digest, &_expected_digest) {
+    if is_equal_digest(&digest, &expected_digest) {
       let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
       let res = Response::from_parts(header, new_body);
       Ok(res)
