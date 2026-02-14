@@ -8,6 +8,7 @@ use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use sha2::Digest;
 use std::future::Future;
 use std::str::FromStr;
+use subtle::ConstantTimeEq;
 
 // hyper's http specific extension to generate and verify http signature
 
@@ -141,7 +142,8 @@ where
       .map_err(|_e| HyperDigestError::HttpBodyError("Failed to get body bytes".to_string()))?;
     let digest = derive_digest(&body_bytes, &cd_type);
 
-    if digest == _expected_digest {
+    // Use constant time equality check to prevent timing attacks
+    if is_equal_digest(&digest, &_expected_digest) {
       let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
       let res = Request::from_parts(header, new_body);
       Ok(res)
@@ -192,7 +194,8 @@ where
       .map_err(|_e| HyperDigestError::HttpBodyError("Failed to get body bytes".to_string()))?;
     let digest = derive_digest(&body_bytes, &cd_type);
 
-    if digest == _expected_digest {
+    // Use constant time equality check to prevent timing attacks
+    if is_equal_digest(&digest, &_expected_digest) {
       let new_body = Full::new(body_bytes).map_err(|never| match never {}).boxed();
       let res = Response::from_parts(header, new_body);
       Ok(res)
@@ -202,6 +205,16 @@ where
       ))
     }
   }
+}
+
+// Constant time equality check for digest verification to prevent timing attacks
+fn is_equal_digest(digest1: &[u8], digest2: &[u8]) -> bool {
+  // Early return if the lengths are different to prevent unnecessary computation,
+  // which is not a security risk in this context since the digest lengths are fixed for each algorithm.
+  if digest1.len() != digest2.len() {
+    return false;
+  }
+  digest1.ct_eq(digest2).into()
 }
 
 async fn extract_content_digest(header_map: &http::HeaderMap) -> HyperDigestResult<(ContentDigestType, Vec<u8>)> {
@@ -300,5 +313,117 @@ mod tests {
 
     let verified = res.verify_content_digest().await;
     assert!(verified.is_ok());
+  }
+
+  #[tokio::test]
+  async fn hyper_request_digest_mismatch_by_body_tamper_should_fail() {
+    // 1) Create a request and set a correct Content-Digest for the original body
+    let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
+    let req = Request::builder()
+      .method("GET")
+      .uri("https://example.com/")
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .header("content-type", "application/json")
+      .body(body)
+      .unwrap();
+
+    let req = req.set_content_digest(&ContentDigestType::Sha256).await.unwrap();
+    assert!(req.headers().contains_key(CONTENT_DIGEST_HEADER));
+
+    // 2) Tamper the body while keeping the digest header unchanged
+    let (parts, _old_body) = req.into_parts();
+    let tampered_body = Full::new(&b"{\"hello\": \"pwned\"}"[..]).boxed();
+    let tampered_req = Request::from_parts(parts, tampered_body);
+
+    // 3) Verification must fail
+    let verified = tampered_req.verify_content_digest().await;
+    assert!(verified.is_err());
+    match verified.err().unwrap() {
+      HyperDigestError::InvalidContentDigest(_) => {}
+      e => panic!("unexpected error: {e:?}"),
+    }
+  }
+
+  #[tokio::test]
+  async fn hyper_response_digest_mismatch_by_header_tamper_should_fail() {
+    // 1) Create a response and set a correct Content-Digest
+    let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
+    let res = Response::builder()
+      .status(200)
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .header("content-type", "application/json")
+      .body(body)
+      .unwrap();
+
+    let res = res.set_content_digest(&ContentDigestType::Sha256).await.unwrap();
+    let (mut parts, body) = res.into_parts();
+
+    // 2) Tamper the Content-Digest header (keep it syntactically valid)
+    // Expected digest is: X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=
+    // Change the first character to another valid base64 character.
+    parts.headers.insert(
+      CONTENT_DIGEST_HEADER,
+      "sha-256=:Y48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:".parse().unwrap(),
+    );
+
+    let tampered_res = Response::from_parts(parts, body);
+
+    // 3) Verification must fail
+    let verified = tampered_res.verify_content_digest().await;
+    assert!(verified.is_err());
+    match verified.err().unwrap() {
+      HyperDigestError::InvalidContentDigest(_) => {}
+      e => panic!("unexpected error: {e:?}"),
+    }
+  }
+
+  #[tokio::test]
+  async fn hyper_request_missing_content_digest_header_should_fail() {
+    let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
+    let req = Request::builder()
+      .method("GET")
+      .uri("https://example.com/")
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .header("content-type", "application/json")
+      .body(body)
+      .unwrap();
+
+    // No set_content_digest() call => header missing
+    let verified = req.verify_content_digest().await;
+    assert!(verified.is_err());
+    match verified.err().unwrap() {
+      HyperDigestError::NoDigestHeader(_) => {}
+      e => panic!("unexpected error: {e:?}"),
+    }
+  }
+
+  #[tokio::test]
+  async fn hyper_request_digest_length_mismatch_should_fail() {
+    // 1) Create a request and attach a valid Content-Digest header
+    let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
+    let req = Request::builder()
+      .method("GET")
+      .uri("https://example.com/")
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .header("content-type", "application/json")
+      .body(body)
+      .unwrap();
+
+    let req = req.set_content_digest(&ContentDigestType::Sha256).await.unwrap();
+
+    // 2) Extract parts and replace the Content-Digest header
+    //    with a syntactically valid but length-mismatched base64 value.
+    //    This ensures that length mismatches are properly rejected.
+    let (mut parts, body) = req.into_parts();
+
+    parts
+      .headers
+      .insert(CONTENT_DIGEST_HEADER, "sha-256=:AAAA=:".parse().unwrap());
+
+    let tampered_req = Request::from_parts(parts, body);
+
+    // 3) Verification must fail due to digest length mismatch
+    let verified = tampered_req.verify_content_digest().await;
+    assert!(verified.is_err());
   }
 }
