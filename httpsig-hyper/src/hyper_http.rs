@@ -1477,4 +1477,107 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
     let result = req.set_message_signature_sync(&signature_params, &secret_key, None);
     assert!(result.is_err(), "expected Err when using `@status` on request, got Ok");
   }
+
+  // ---- RFC 9421 §2.2: Derived component extraction values ----
+
+  #[test]
+  fn test_extract_derived_components_values() {
+    let req = build_query_request();
+    // URI: https://example.com/path?foo=bar&id=123&x=y
+    let req_or_res = RequestOrResponse::Request(&req);
+
+    // @method (§2.2.1)
+    let id = HttpMessageComponentId::try_from("@method").unwrap();
+    let c = extract_derived_component(&req_or_res, &id).unwrap();
+    assert_eq!(c.to_string(), "\"@method\": GET");
+
+    // @target-uri (§2.2.2)
+    let id = HttpMessageComponentId::try_from("@target-uri").unwrap();
+    let c = extract_derived_component(&req_or_res, &id).unwrap();
+    assert_eq!(c.to_string(), "\"@target-uri\": https://example.com/path?foo=bar&id=123&x=y");
+
+    // @authority (§2.2.3)
+    let id = HttpMessageComponentId::try_from("@authority").unwrap();
+    let c = extract_derived_component(&req_or_res, &id).unwrap();
+    assert_eq!(c.to_string(), "\"@authority\": example.com");
+
+    // @scheme (§2.2.4)
+    let id = HttpMessageComponentId::try_from("@scheme").unwrap();
+    let c = extract_derived_component(&req_or_res, &id).unwrap();
+    assert_eq!(c.to_string(), "\"@scheme\": https");
+
+    // @path (§2.2.6)
+    let id = HttpMessageComponentId::try_from("@path").unwrap();
+    let c = extract_derived_component(&req_or_res, &id).unwrap();
+    assert_eq!(c.to_string(), "\"@path\": /path");
+
+    // @query (§2.2.7)
+    let id = HttpMessageComponentId::try_from("@query").unwrap();
+    let c = extract_derived_component(&req_or_res, &id).unwrap();
+    assert_eq!(c.to_string(), "\"@query\": ?foo=bar&id=123&x=y");
+
+    // @query-param;name="id" (§2.2.8)
+    let id = HttpMessageComponentId::try_from("\"@query-param\";name=\"id\"").unwrap();
+    let c = extract_derived_component(&req_or_res, &id).unwrap();
+    assert_eq!(c.to_string(), "\"@query-param\";name=\"id\": 123");
+  }
+
+  // ---- RFC 9421 §2.4: @query-param;name="...";req on response ----
+
+  #[tokio::test]
+  async fn test_response_with_query_param_req_sign_verify() {
+    // Build a request with query params
+    let req = build_query_request();
+    // Build a response
+    let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+    let mut res: Response<BoxBody> = Response::builder().status(200).body(body).unwrap();
+
+    // Response signature covering @status + @query-param;name="id";req
+    let covered = ["@status", "\"@query-param\";name=\"id\";req"];
+    let covered_components = covered
+      .iter()
+      .map(|v| HttpMessageComponentId::try_from(*v))
+      .collect::<Result<Vec<_>, _>>()
+      .unwrap();
+
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    res
+      .set_message_signature(&signature_params, &secret_key, None, Some(&req))
+      .await
+      .unwrap();
+
+    assert!(req.headers().get("signature-input").is_none(), "request should not be modified");
+    assert!(res.headers().get("signature-input").is_some(), "signature-input header is missing on response");
+    assert!(res.headers().get("signature").is_some(), "signature header is missing on response");
+
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
+    assert!(verification_res.is_ok(), "signature verification failed: {:?}", verification_res.err());
+  }
+
+  // ---- RFC 9421: Response must reject request-derived components without `req` ----
+
+  #[tokio::test]
+  async fn test_response_rejects_derived_component_without_req() {
+    let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+    let mut res: Response<BoxBody> = Response::builder().status(200).body(body).unwrap();
+
+    // `@method` without `req` on a response — must fail
+    let covered = vec![
+      HttpMessageComponentId::try_from("@status").unwrap(),
+      HttpMessageComponentId::try_from("@method").unwrap(),
+    ];
+
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    let result = res
+      .set_message_signature(&signature_params, &secret_key, None, None as Option<&Request<()>>)
+      .await;
+    assert!(result.is_err(), "expected Err when using `@method` without `req` on response");
+  }
 }
