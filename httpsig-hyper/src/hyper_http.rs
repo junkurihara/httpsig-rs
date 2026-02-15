@@ -824,13 +824,37 @@ fn extract_derived_component<B>(
       "invalid http message component name as derived component".to_string(),
     ));
   };
-  if !id.params.0.is_empty()
-    && matches!(req_or_res, RequestOrResponse::Request(_))
-    && !(id.params.0.contains(&HttpMessageComponentParam::Req) && id.params.0.len() == 1)
-  {
-    return Err(HyperSigError::InvalidComponentParam(
-      "derived component does not allow parameters for request".to_string(),
-    ));
+  // Validate parameters allowed on derived components (RFC 9421).
+  // - `name`: only valid on `@query-param`
+  // - `req`: only valid on response messages (to reference request-derived components, §2.4)
+  // - `sf`, `key`, `bs`, `tr`: only valid on HTTP field components, not derived components
+  for param in id.params.0.iter() {
+    match param {
+      HttpMessageComponentParam::Name(_) => {
+        if !matches!(derived_id, DerivedComponentName::QueryParam) {
+          return Err(HyperSigError::InvalidComponentParam(
+            "`name` parameter is only allowed for `@query-param`".to_string(),
+          ));
+        }
+      }
+      HttpMessageComponentParam::Req => {
+        // `req` is only meaningful in response signatures (RFC 9421 §2.4).
+        // `build_signature_base` already validates this and re-dispatches extraction
+        // against the original request, so `req_or_res` here should always be
+        // `Request`. Guard against misuse by callers that bypass `build_signature_base`.
+        if !matches!(req_or_res, RequestOrResponse::Request(_)) {
+          return Err(HyperSigError::InvalidComponentParam(
+            "`req`-tagged component must be extracted from the source request".to_string(),
+          ));
+        }
+      }
+      _ => {
+        return Err(HyperSigError::InvalidComponentParam(format!(
+          "parameter `{}` is not allowed on derived components",
+          String::from(param.clone())
+        )));
+      }
+    }
   }
 
   match req_or_res {
@@ -842,9 +866,21 @@ fn extract_derived_component<B>(
       }
     }
     RequestOrResponse::Response(_) => {
-      if !matches!(derived_id, DerivedComponentName::Status) && !matches!(derived_id, DerivedComponentName::SignatureParams) {
+      let has_req = id.params.0.contains(&HttpMessageComponentParam::Req);
+      // Response messages can use `@status` and `@signature-params` directly,
+      // or any request-derived component with the `req` parameter (RFC 9421 §2.4).
+      if !matches!(derived_id, DerivedComponentName::Status)
+        && !matches!(derived_id, DerivedComponentName::SignatureParams)
+        && !has_req
+      {
         return Err(HyperSigError::InvalidComponentName(
-          "Only `status` and `signature-params` are allowed for response".to_string(),
+          "derived components other than `@status` and `@signature-params` require `req` parameter for response".to_string(),
+        ));
+      }
+      // `@status` must not have `req` parameter
+      if matches!(derived_id, DerivedComponentName::Status) && has_req {
+        return Err(HyperSigError::InvalidComponentParam(
+          "`@status` does not accept `req` parameter".to_string(),
         ));
       }
     }

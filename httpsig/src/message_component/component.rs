@@ -283,9 +283,12 @@ mod tests {
   #[test]
   fn test_field_params_derived_component() {
     // params check
-    // only req field param is allowed
+    // only req and query-param field params are allowed
     let comp = HttpMessageComponent::try_from("\"@method\";req: POST");
     assert!(comp.is_ok());
+    let comp = HttpMessageComponent::try_from("\"@query-param\";name=\"id\": POST");
+    assert!(comp.is_ok());
+
     let comp = HttpMessageComponent::try_from("\"@method\";bs: POST");
     assert!(comp.is_err());
     let comp = HttpMessageComponent::try_from("\"@method\";key=\"hoge\": POST");
