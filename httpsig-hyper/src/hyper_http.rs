@@ -286,14 +286,20 @@ where
     T: SigningKey + Sync,
   {
     let req_or_res = RequestOrResponse::Request(self);
-    let vec_signature_headers_fut = params_key_name.iter().flat_map(|(params, key, name)| {
-      build_signature_base(&req_or_res, params, None as Option<&Request<()>>)
-        .map(|base| async move { base.build_signature_headers(*key, *name) })
-    });
-    let vec_signature_headers = futures::future::join_all(vec_signature_headers_fut)
-      .await
-      .into_iter()
+    let vec_signature_bases = params_key_name
+      .iter()
+      .map(|(params, key, name)| {
+        build_signature_base(&req_or_res, params, None as Option<&Request<()>>).map(|base| (base, *key, *name))
+      })
       .collect::<Result<Vec<_>, _>>()?;
+    let vec_signature_headers = futures::future::join_all(
+      vec_signature_bases
+        .into_iter()
+        .map(|(base, key, name)| async move { base.build_signature_headers(key, name) }),
+    )
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
     vec_signature_headers.iter().try_for_each(|headers| {
       self
         .headers_mut()
@@ -405,14 +411,18 @@ where
   {
     let req_or_res = RequestOrResponse::Response(self);
 
-    let vec_signature_headers_fut = params_key_name.iter().flat_map(|(params, key, name)| {
-      build_signature_base(&req_or_res, params, req_for_param)
-        .map(|base| async move { base.build_signature_headers(*key, *name) })
-    });
-    let vec_signature_headers = futures::future::join_all(vec_signature_headers_fut)
-      .await
-      .into_iter()
+    let vec_signature_bases = params_key_name
+      .iter()
+      .map(|(params, key, name)| build_signature_base(&req_or_res, params, req_for_param).map(|base| (base, *key, *name)))
       .collect::<Result<Vec<_>, _>>()?;
+    let vec_signature_headers = futures::future::join_all(
+      vec_signature_bases
+        .into_iter()
+        .map(|(base, key, name)| async move { base.build_signature_headers(key, name) }),
+    )
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
 
     vec_signature_headers.iter().try_for_each(|headers| {
       self
@@ -828,34 +838,24 @@ fn extract_derived_component<B>(
   // - `name`: only valid on `@query-param`
   // - `req`: only valid on response messages (to reference request-derived components, §2.4)
   // - `sf`, `key`, `bs`, `tr`: only valid on HTTP field components, not derived components
-  for param in id.params.0.iter() {
-    match param {
-      HttpMessageComponentParam::Name(_) => {
-        if !matches!(derived_id, DerivedComponentName::QueryParam) {
-          return Err(HyperSigError::InvalidComponentParam(
-            "`name` parameter is only allowed for `@query-param`".to_string(),
-          ));
-        }
-      }
-      HttpMessageComponentParam::Req => {
-        // `req` is only meaningful in response signatures (RFC 9421 §2.4).
-        // `build_signature_base` already validates this and re-dispatches extraction
-        // against the original request, so `req_or_res` here should always be
-        // `Request`. Guard against misuse by callers that bypass `build_signature_base`.
-        if !matches!(req_or_res, RequestOrResponse::Request(_)) {
-          return Err(HyperSigError::InvalidComponentParam(
-            "`req`-tagged component must be extracted from the source request".to_string(),
-          ));
-        }
-      }
-      _ => {
-        return Err(HyperSigError::InvalidComponentParam(format!(
-          "parameter `{}` is not allowed on derived components",
-          String::from(param.clone())
-        )));
-      }
-    }
-  }
+  id.params.0.iter().try_for_each(|param| match param {
+    HttpMessageComponentParam::Name(_) if matches!(derived_id, DerivedComponentName::QueryParam) => Ok(()),
+    HttpMessageComponentParam::Name(_) => Err(HyperSigError::InvalidComponentParam(
+      "`name` parameter is only allowed for `@query-param`".to_string(),
+    )),
+    // `req` is only meaningful in response signatures (RFC 9421 §2.4).
+    // `build_signature_base` already validates this and re-dispatches extraction against the
+    // original request, so `req_or_res` here should always be `Request`.
+    // Guard against misuse by callers that bypass `build_signature_base`.
+    HttpMessageComponentParam::Req if matches!(req_or_res, RequestOrResponse::Request(_)) => Ok(()),
+    HttpMessageComponentParam::Req => Err(HyperSigError::InvalidComponentParam(
+      "`req`-tagged component must be extracted from the source request".to_string(),
+    )),
+    _ => Err(HyperSigError::InvalidComponentParam(format!(
+      "parameter `{}` is not allowed on derived components",
+      String::from(param.clone())
+    ))),
+  })?;
 
   match req_or_res {
     RequestOrResponse::Request(_) => {
@@ -953,7 +953,7 @@ mod tests {
     },
     *,
   };
-  use http_body_util::Full;
+  use http_body_util::{BodyExt, Full};
   use httpsig::prelude::{AlgorithmName, PublicKey, SecretKey, SharedKey};
 
   type BoxBody = http_body_util::combinators::BoxBody<bytes::Bytes, HyperDigestError>;
@@ -1321,5 +1321,160 @@ ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
     let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
     let verification_res = res.verify_message_signature_sync(&public_key, None, Some(&req));
     assert!(verification_res.is_ok());
+  }
+
+  // ---- Issue #17: @query-param;name="..." ----
+
+  /// Helper to build a request with query parameters (no content-digest needed)
+  fn build_query_request() -> Request<BoxBody> {
+    let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+    Request::builder()
+      .method("GET")
+      .uri("https://example.com/path?foo=bar&id=123&x=y")
+      .header("date", "Sun, 09 May 2021 18:30:00 GMT")
+      .body(body)
+      .unwrap()
+  }
+
+  /// Regression test for issue #17: @query-param;name="id" must produce signature headers (sync)
+  #[cfg(feature = "blocking")]
+  #[test]
+  fn test_query_param_sign_verify_sync() {
+    let mut req = build_query_request();
+
+    let covered = ["@method", "\"@query-param\";name=\"id\"", "date"];
+    let covered_components = covered
+      .iter()
+      .map(|v| HttpMessageComponentId::try_from(*v))
+      .collect::<Result<Vec<_>, _>>()
+      .unwrap();
+
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    req
+      .set_message_signature_sync(&signature_params, &secret_key, Some("qp"))
+      .unwrap();
+
+    assert!(
+      req.headers().get("signature-input").is_some(),
+      "signature-input header is missing"
+    );
+    assert!(req.headers().get("signature").is_some(), "signature header is missing");
+
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = req.verify_message_signature_sync(&public_key, None);
+    assert!(
+      verification_res.is_ok(),
+      "signature verification failed: {:?}",
+      verification_res.err()
+    );
+  }
+
+  /// Regression test for issue #17: @query-param;name="id" must produce signature headers (async)
+  #[tokio::test]
+  async fn test_query_param_sign_verify_async() {
+    let mut req = build_query_request();
+
+    let covered = ["@method", "\"@query-param\";name=\"id\"", "date"];
+    let covered_components = covered
+      .iter()
+      .map(|v| HttpMessageComponentId::try_from(*v))
+      .collect::<Result<Vec<_>, _>>()
+      .unwrap();
+
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    req
+      .set_message_signature(&signature_params, &secret_key, Some("qp"))
+      .await
+      .unwrap();
+
+    assert!(
+      req.headers().get("signature-input").is_some(),
+      "signature-input header is missing"
+    );
+    assert!(req.headers().get("signature").is_some(), "signature header is missing");
+
+    let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
+    let verification_res = req.verify_message_signature(&public_key, None).await;
+    assert!(
+      verification_res.is_ok(),
+      "signature verification failed: {:?}",
+      verification_res.err()
+    );
+  }
+
+  // ---- Derived component parameter validation ----
+
+  #[test]
+  fn test_extract_derived_component_rejects_name_on_non_query_param() {
+    let req = build_query_request();
+    let req_or_res = RequestOrResponse::Request(&req);
+    // `@method;name="foo"` is invalid — `name` is only for `@query-param`
+    let id = HttpMessageComponentId::try_from("\"@method\";name=\"foo\"");
+    // component_id parsing itself may reject this; if it doesn't, extraction should
+    if let Ok(id) = id {
+      let result = extract_derived_component(&req_or_res, &id);
+      assert!(result.is_err(), "expected error for `name` on `@method`");
+    }
+  }
+
+  #[test]
+  fn test_extract_derived_component_rejects_sf_on_derived() {
+    let req = build_query_request();
+    let req_or_res = RequestOrResponse::Request(&req);
+    // `@method;sf` is invalid — `sf` is only for HTTP field components
+    let id = HttpMessageComponentId::try_from("\"@method\";sf");
+    if let Ok(id) = id {
+      let result = extract_derived_component(&req_or_res, &id);
+      assert!(result.is_err(), "expected error for `sf` on derived component");
+    }
+  }
+
+  // ---- Error propagation ----
+
+  #[tokio::test]
+  async fn test_set_message_signature_propagates_build_error() {
+    // Use `@status` on a request — this is invalid and must return Err, not Ok
+    let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+    let mut req: Request<BoxBody> = Request::builder()
+      .method("GET")
+      .uri("https://example.com/")
+      .body(body)
+      .unwrap();
+
+    let covered = vec![HttpMessageComponentId::try_from("@status").unwrap()];
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    let result = req
+      .set_message_signature(&signature_params, &secret_key, None as Option<&str>)
+      .await;
+    assert!(result.is_err(), "expected Err when using `@status` on request, got Ok");
+  }
+
+  #[cfg(feature = "blocking")]
+  #[test]
+  fn test_set_message_signature_sync_propagates_build_error() {
+    // Same as above but for sync path
+    let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+    let mut req: Request<BoxBody> = Request::builder()
+      .method("GET")
+      .uri("https://example.com/")
+      .body(body)
+      .unwrap();
+
+    let covered = vec![HttpMessageComponentId::try_from("@status").unwrap()];
+    let secret_key = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
+    let mut signature_params = HttpSignatureParams::try_new(&covered).unwrap();
+    signature_params.set_key_info(&secret_key);
+
+    let result = req.set_message_signature_sync(&signature_params, &secret_key, None);
+    assert!(result.is_err(), "expected Err when using `@status` on request, got Ok");
   }
 }
