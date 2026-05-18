@@ -50,7 +50,9 @@ impl std::str::FromStr for ContentDigestType {
     match s {
       "sha-256" => Ok(ContentDigestType::Sha256),
       "sha-512" => Ok(ContentDigestType::Sha512),
-      _ => Err(error::HyperDigestError::InvalidContentDigestType(s.to_string())),
+      _ => Err(error::HyperDigestError::InvalidContentDigestType(
+        s.to_string(),
+      )),
     }
   }
 }
@@ -83,7 +85,13 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is";
 
   const COVERED_COMPONENTS_REQ: &[&str] = &["@method", "date", "content-type", "content-digest"];
-  const COVERED_COMPONENTS_RES: &[&str] = &["@status", "\"@method\";req", "date", "content-type", "\"content-digest\";req"];
+  const COVERED_COMPONENTS_RES: &[&str] = &[
+    "@status",
+    "\"@method\";req",
+    "date",
+    "content-type",
+    "\"content-digest\";req",
+  ];
 
   async fn build_request() -> Request<BoxBody> {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
@@ -95,7 +103,10 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
         .header("content-type", "application/json-patch+json")
         .body(body)
         .unwrap();
-    req.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
+    req
+      .set_content_digest(&ContentDigestType::Sha256)
+      .await
+      .unwrap()
   }
 
   async fn build_response() -> Response<BoxBody> {
@@ -107,7 +118,10 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       .header("content-type", "application/json-patch+json")
       .body(body)
       .unwrap();
-    res.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
+    res
+      .set_content_digest(&ContentDigestType::Sha256)
+      .await
+      .unwrap()
   }
 
   #[test]
@@ -139,7 +153,12 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       .set_message_signature(&signature_params, &secret_key, Some("custom_sig_name"))
       .await
       .unwrap();
-    let signature_input = req.headers().get("signature-input").unwrap().to_str().unwrap();
+    let signature_input = req
+      .headers()
+      .get("signature-input")
+      .unwrap()
+      .to_str()
+      .unwrap();
     let signature = req.headers().get("signature").unwrap().to_str().unwrap();
     assert!(signature_input.starts_with(r##"custom_sig_name=("##));
     assert!(signature.starts_with(r##"custom_sig_name=:"##));
@@ -153,10 +172,14 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     // verify with checking key_id
     let key_id = public_key.key_id();
-    let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await;
+    let verification_res = req
+      .verify_message_signature(&public_key, Some(&key_id))
+      .await;
     assert!(verification_res.is_ok());
 
-    let verification_res = req.verify_message_signature(&public_key, Some("NotFoundKeyId")).await;
+    let verification_res = req
+      .verify_message_signature(&public_key, Some("NotFoundKeyId"))
+      .await;
     assert!(verification_res.is_err());
   }
 
@@ -181,10 +204,20 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     // set custom signature name, and `req` field param if needed (e.g., request method, uri, content-digest, etc.) included only in response
     res
-      .set_message_signature(&signature_params, &secret_key, Some("custom_sig_name"), Some(&req))
+      .set_message_signature(
+        &signature_params,
+        &secret_key,
+        Some("custom_sig_name"),
+        Some(&req),
+      )
       .await
       .unwrap();
-    let signature_input = res.headers().get("signature-input").unwrap().to_str().unwrap();
+    let signature_input = res
+      .headers()
+      .get("signature-input")
+      .unwrap()
+      .to_str()
+      .unwrap();
     let signature = res.headers().get("signature").unwrap().to_str().unwrap();
     assert!(signature_input.starts_with(r##"custom_sig_name=("##));
     assert!(signature.starts_with(r##"custom_sig_name=:"##));
@@ -193,7 +226,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     // get algorithm from signature params
     let (alg, _key_id) = res.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
     let public_key = PublicKey::from_pem(&alg.unwrap(), EDDSA_PUBLIC_KEY).unwrap();
-    let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
+    let verification_res = res
+      .verify_message_signature(&public_key, None, Some(&req))
+      .await;
     assert!(verification_res.is_ok());
     let verification_res = res
       .verify_message_signature(&public_key, None, None as Option<&Request<()>>)
@@ -202,7 +237,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
     // verify with checking key_id
     let key_id = public_key.key_id();
-    let verification_res = res.verify_message_signature(&public_key, Some(&key_id), Some(&req)).await;
+    let verification_res = res
+      .verify_message_signature(&public_key, Some(&key_id), Some(&req))
+      .await;
     assert!(verification_res.is_ok());
 
     let verification_res = res
@@ -227,7 +264,9 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     // set key information, alg and keyid
     signature_params.set_key_info(&secret_key);
     // set signature
-    req.set_message_signature_sync(&signature_params, &secret_key, None).unwrap();
+    req
+      .set_message_signature_sync(&signature_params, &secret_key, None)
+      .unwrap();
 
     let (alg, _key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
     let public_key = PublicKey::from_pem(&alg.unwrap(), EDDSA_PUBLIC_KEY).unwrap();
