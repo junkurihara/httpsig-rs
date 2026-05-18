@@ -60,9 +60,9 @@ impl std::str::FromStr for ContentDigestType {
 pub use error::{HyperDigestError, HyperDigestResult, HyperSigError, HyperSigResult};
 pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
-pub use hyper_http::{
-  MessageSignature, MessageSignatureReq, MessageSignatureReqSync, MessageSignatureRes, MessageSignatureResSync,
-};
+pub use hyper_http::{MessageSignature, MessageSignatureReq, MessageSignatureRes};
+#[cfg(feature = "blocking")]
+pub use hyper_http::{MessageSignatureReqSync, MessageSignatureResSync};
 
 /* ----------------------------------------------------------------- */
 #[cfg(test)]
