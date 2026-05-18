@@ -13,7 +13,9 @@ rust-version.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["blocking"]
+default = ["blocking", "digest-sha256", "digest-sha512"]
+digest-sha256 = []
+digest-sha512 = []
 blocking = ["futures/executor"]
 rsa-signature = ["httpsig/rsa-signature"]
 
@@ -49,3 +51,12 @@ tokio = { version = "1.49.0", default-features = false, features = [
   "macros",
   "rt-multi-thread",
 ] } # testing only
+
+[[example]]
+name = "hyper-response"
+required-features = ["digest-sha256"]
+
+
+[[example]]
+name = "hyper-request"
+required-features = ["digest-sha256"]

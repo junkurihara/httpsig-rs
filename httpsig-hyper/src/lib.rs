@@ -21,34 +21,45 @@
 //! will panic. If you are already in an async context, use the async methods directly.
 
 mod error;
+#[cfg(any(feature = "digest-sha256", feature = "digest-sha512"))]
 mod hyper_content_digest;
 mod hyper_http;
 
 // hyper's http specific extension to generate and verify http signature
 
 /// content-digest header name
+#[cfg(any(feature = "digest-sha256", feature = "digest-sha512"))]
 const CONTENT_DIGEST_HEADER: &str = "content-digest";
 
 /// content-digest header type
+#[cfg(any(feature = "digest-sha256", feature = "digest-sha512"))]
 pub enum ContentDigestType {
+  #[cfg(feature = "digest-sha256")]
   Sha256,
+  #[cfg(feature = "digest-sha512")]
   Sha512,
 }
 
+#[cfg(any(feature = "digest-sha256", feature = "digest-sha512"))]
 impl std::fmt::Display for ContentDigestType {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
+      #[cfg(feature = "digest-sha256")]
       ContentDigestType::Sha256 => write!(f, "sha-256"),
+      #[cfg(feature = "digest-sha512")]
       ContentDigestType::Sha512 => write!(f, "sha-512"),
     }
   }
 }
 
+#[cfg(any(feature = "digest-sha256", feature = "digest-sha512"))]
 impl std::str::FromStr for ContentDigestType {
   type Err = error::HyperDigestError;
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     match s {
+      #[cfg(feature = "digest-sha256")]
       "sha-256" => Ok(ContentDigestType::Sha256),
+      #[cfg(feature = "digest-sha512")]
       "sha-512" => Ok(ContentDigestType::Sha512),
       _ => Err(error::HyperDigestError::InvalidContentDigestType(
         s.to_string(),
@@ -59,13 +70,14 @@ impl std::str::FromStr for ContentDigestType {
 
 pub use error::{HyperDigestError, HyperDigestResult, HyperSigError, HyperSigResult};
 pub use httpsig::prelude;
+#[cfg(any(feature = "digest-sha256", feature = "digest-sha512"))]
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
 pub use hyper_http::{MessageSignature, MessageSignatureReq, MessageSignatureRes};
 #[cfg(feature = "blocking")]
 pub use hyper_http::{MessageSignatureReqSync, MessageSignatureResSync};
 
 /* ----------------------------------------------------------------- */
-#[cfg(test)]
+#[cfg(all(test, feature = "digest-sha256"))]
 mod tests {
   use super::{prelude::*, *};
   use http::{Request, Response};
@@ -127,6 +139,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   #[test]
   fn test_content_digest_type() {
     assert_eq!(ContentDigestType::Sha256.to_string(), "sha-256");
+    #[cfg(feature = "digest-sha512")]
     assert_eq!(ContentDigestType::Sha512.to_string(), "sha-512");
   }
 
