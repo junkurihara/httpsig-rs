@@ -28,7 +28,10 @@ async fn build_request() -> Request<BoxBody> {
     .header("content-type", "application/json-patch+json")
     .body(body)
     .unwrap();
-  req.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
+  req
+    .set_content_digest(&ContentDigestType::Sha256)
+    .await
+    .unwrap()
 }
 
 /// Sender function that generates a request with a signature
@@ -65,7 +68,8 @@ async fn sender_hs256(req: &mut Request<BoxBody>) {
   let mut signature_params = HttpSignatureParams::try_new(&covered_components).unwrap();
 
   // set signing/verifying key information, alg and keyid and random noce with hmac-sha256
-  let shared_key = SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
+  let shared_key =
+    SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
   signature_params.set_key_info(&shared_key);
   signature_params.set_random_nonce();
 
@@ -85,7 +89,9 @@ where
   let key_id = public_key.key_id();
 
   // verify signature with checking key_id
-  req.verify_message_signature(&public_key, Some(&key_id)).await
+  req
+    .verify_message_signature(&public_key, Some(&key_id))
+    .await
 }
 
 /// Receiver function that verifies a request with a signature of hmac-sha256
@@ -94,18 +100,24 @@ where
   B: http_body::Body + Send + Sync,
 {
   println!("Verifying HMAC-SHA256 signature");
-  let shared_key = SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
+  let shared_key =
+    SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
   let key_id = VerifyingKey::key_id(&shared_key);
 
   // verify signature with checking key_id
-  req.verify_message_signature(&shared_key, Some(&key_id)).await
+  req
+    .verify_message_signature(&shared_key, Some(&key_id))
+    .await
 }
 
 async fn scenario_multiple_signatures() {
   println!("--------------  Scenario: Multiple signatures  --------------");
 
   let mut request_from_sender = build_request().await;
-  println!("Request header before signing:\n{:#?}", request_from_sender.headers());
+  println!(
+    "Request header before signing:\n{:#?}",
+    request_from_sender.headers()
+  );
 
   // sender signs a signature of ed25519 and hmac-sha256
   sender_ed25519(&mut request_from_sender).await;
@@ -130,9 +142,15 @@ async fn scenario_multiple_signatures() {
     .map(|v| v.to_str())
     .collect::<Result<Vec<_>, _>>()
     .unwrap();
-  assert!(signature_inputs.iter().any(|v| v.starts_with(r##"siged25519=("##)));
-  assert!(signature_inputs.iter().any(|v| v.starts_with(r##"sighs256=("##)));
-  assert!(signatures.iter().any(|v| v.starts_with(r##"siged25519=:"##)));
+  assert!(signature_inputs
+    .iter()
+    .any(|v| v.starts_with(r##"siged25519=("##)));
+  assert!(signature_inputs
+    .iter()
+    .any(|v| v.starts_with(r##"sighs256=("##)));
+  assert!(signatures
+    .iter()
+    .any(|v| v.starts_with(r##"siged25519=:"##)));
   assert!(signatures.iter().any(|v| v.starts_with(r##"sighs256=:"##)));
 
   // receiver verifies the request with signatures
@@ -154,12 +172,18 @@ async fn scenario_single_signature_ed25519() {
   println!("--------------  Scenario: Single signature with Ed25519  --------------");
 
   let mut request_from_sender = build_request().await;
-  println!("Request header before signing:\n{:#?}", request_from_sender.headers());
+  println!(
+    "Request header before signing:\n{:#?}",
+    request_from_sender.headers()
+  );
 
   // sender signs a signature of ed25519
   sender_ed25519(&mut request_from_sender).await;
 
-  println!("Request header signed by ED25519:\n{:#?}", request_from_sender.headers());
+  println!(
+    "Request header signed by ED25519:\n{:#?}",
+    request_from_sender.headers()
+  );
 
   let signature_inputs = request_from_sender
     .headers()
@@ -175,8 +199,12 @@ async fn scenario_single_signature_ed25519() {
     .map(|v| v.to_str())
     .collect::<Result<Vec<_>, _>>()
     .unwrap();
-  assert!(signature_inputs.iter().any(|v| v.starts_with(r##"siged25519=("##)));
-  assert!(signatures.iter().any(|v| v.starts_with(r##"siged25519=:"##)));
+  assert!(signature_inputs
+    .iter()
+    .any(|v| v.starts_with(r##"siged25519=("##)));
+  assert!(signatures
+    .iter()
+    .any(|v| v.starts_with(r##"siged25519=:"##)));
 
   // receiver verifies the request with signatures
   // every signature is independent and verified separately

@@ -29,11 +29,14 @@ pub struct HttpSignatureHeaders {
 
 impl HttpSignatureHeaders {
   /// Generates (possibly multiple) HttpSignatureHeaders from signature and signature-input header values
-  pub fn try_parse(signature_header: &str, signature_input_header: &str) -> HttpSigResult<HttpSignatureHeadersMap> {
+  pub fn try_parse(
+    signature_header: &str,
+    signature_input_header: &str,
+  ) -> HttpSigResult<HttpSignatureHeadersMap> {
     let signature_input: sfv::Dictionary = Parser::new(signature_input_header)
       .parse()
       .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
-    let signature: sfv::Dictionary = Parser::new(signature_header)
+    let mut signature: sfv::Dictionary = Parser::new(signature_header)
       .parse()
       .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
     // let signature_input =
@@ -43,13 +46,13 @@ impl HttpSignatureHeaders {
 
     if signature.len() != signature_input.len() {
       return Err(HttpSigError::BuildSignatureHeaderError(
-        "The number of signature and signature-input headers are not the same".to_string(),
+        "The number of signature and signature-input headers are not the same",
       ));
     }
 
     if !signature.keys().all(|k| signature_input.contains_key(k)) {
       return Err(HttpSigError::BuildSignatureHeaderError(
-        "The signature and signature-input headers are not the same".to_string(),
+        "The signature and signature-input headers are not the same",
       ));
     }
     if !signature.values().all(|v| {
@@ -62,12 +65,15 @@ impl HttpSignatureHeaders {
       )
     }) {
       return Err(HttpSigError::BuildSignatureHeaderError(
-        "The signature header is not a dictionary".to_string(),
+        "The signature header is not a dictionary",
       ));
     }
-    if !signature_input.values().all(|v| matches!(v, ListEntry::InnerList(_))) {
+    if !signature_input
+      .values()
+      .all(|v| matches!(v, ListEntry::InnerList(_)))
+    {
       return Err(HttpSigError::BuildSignatureHeaderError(
-        "The signature-input header is not a dictionary".to_string(),
+        "The signature-input header is not a dictionary",
       ));
     }
 
@@ -77,14 +83,14 @@ impl HttpSignatureHeaders {
         let signature_name = k.to_string();
         let signature_params = HttpSignatureParams::try_from(v)?;
 
-        let signature_bytes = match signature.get(k) {
+        let signature_bytes = match signature.swap_remove(k) {
           Some(ListEntry::Item(Item {
             bare_item: BareItem::ByteSequence(v),
             ..
           })) => v,
           _ => unreachable!(),
         };
-        let signature = HttpSignature(signature_bytes.to_vec());
+        let signature = HttpSignature(signature_bytes);
 
         Ok((
           signature_name.clone(),
@@ -148,11 +154,14 @@ impl HttpSignatureBase {
   /// This should not be exposed to user and not used directly.
   /// Use wrapper functions generating SignatureBase from base HTTP request and Signer itself instead when newly generating signature
   /// When verifying signature, use wrapper functions generating SignatureBase from HTTP request containing signature params itself instead.
-  pub fn try_new(component_lines: &[HttpMessageComponent], signature_params: &HttpSignatureParams) -> HttpSigResult<Self> {
+  pub fn try_new(
+    component_lines: Vec<HttpMessageComponent>,
+    signature_params: &HttpSignatureParams,
+  ) -> HttpSigResult<Self> {
     // check if the order of component lines is the same as the order of covered message component ids
     if component_lines.len() != signature_params.covered_components.len() {
       return Err(HttpSigError::BuildSignatureBaseError(
-        "The number of component lines is not the same as the number of covered message component ids".to_string(),
+        "The number of component lines is not the same as the number of covered message component ids",
       ));
     }
 
@@ -162,12 +171,13 @@ impl HttpSignatureBase {
       .all(|(component_line, covered_component_id)| component_line.id == *covered_component_id);
     if !assertion {
       return Err(HttpSigError::BuildSignatureBaseError(
-        "The order of component lines is not the same as the order of covered message component ids".to_string(),
+        "The order of component lines is not the same as the order of covered message component ids",
       ));
     }
 
     Ok(Self {
-      component_lines: component_lines.to_vec(),
+      component_lines,
+      // defer clone on happy path
       signature_params: signature_params.clone(),
     })
   }
@@ -206,7 +216,7 @@ impl HttpSignatureBase {
   ) -> HttpSigResult<()> {
     if signature_headers.signature_params().is_expired() {
       return Err(HttpSigError::ExpiredSignatureParams(
-        "Signature params is expired".to_string(),
+        "Signature params is expired",
       ));
     }
     let signature_bytes = signature_headers.signature.0.as_slice();
@@ -246,7 +256,7 @@ impl std::fmt::Display for HttpSignatureBase {
   }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ed25519-signature"))]
 mod test {
   use super::*;
   use crate::signature_params::HttpSignatureParams;
@@ -261,16 +271,18 @@ mod test {
   /// こんな感じでSignatureBaseをParamsとかComponentLinesから直接作るのは避ける。
   #[test]
   fn test_signature_base_directly_instantiated() {
-    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
+    const SIGPARA: &str =
+      r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
     let values = (r##""@method" "@path" "date" "content-digest""##, SIGPARA);
-    let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
+    let signature_params =
+      HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 
     let component_lines = COMPONENT_LINES
       .iter()
       .map(|&s| HttpMessageComponent::try_from(s))
       .collect::<Result<Vec<_>, _>>()
       .unwrap();
-    let signature_base = HttpSignatureBase::try_new(&component_lines, &signature_params).unwrap();
+    let signature_base = HttpSignatureBase::try_new(component_lines, &signature_params).unwrap();
     let test_string = r##""@method": GET
 "@path": /
 "date": Tue, 07 Jun 2014 20:51:35 GMT

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use thiserror::Error;
 
 /// Result type for http signature
@@ -12,16 +14,16 @@ pub enum HttpSigError {
   /* ----- Crypto errors ----- */
   /// Invalid private key for asymmetric algorithm
   #[error("Failed to parse private key: {0}")]
-  ParsePrivateKeyError(String),
+  ParsePrivateKeyError(Cow<'static, str>),
   /// Invalid public key for asymmetric algorithm
   #[error("Failed to parse public key: {0}")]
-  ParsePublicKeyError(String),
+  ParsePublicKeyError(Cow<'static, str>),
   /// Signature parse error
   #[error("Failed to parse signature: {0}")]
-  ParseSignatureError(String),
+  ParseSignatureError(Cow<'static, str>),
   /// Invalid Signature
   #[error("Invalid Signature: {0}")]
-  InvalidSignature(String),
+  InvalidSignature(Cow<'static, str>),
 
   /* ----- Component errors ----- */
   /// Failed to parse structured field value
@@ -38,24 +40,24 @@ pub enum HttpSigError {
   InvalidComponentId(String),
   /// Invalid http message component
   #[error("Invalid http message component: {0}")]
-  InvalidComponent(String),
+  InvalidComponent(Cow<'static, str>),
 
   /* ----- Signature params errors ----- */
   /// Invalid signature params
   #[error("Invalid signature params: {0}")]
-  InvalidSignatureParams(String),
+  InvalidSignatureParams(&'static str),
 
   /// Error in building signature header
   #[error("Failed to build signature header: {0}")]
-  BuildSignatureHeaderError(String),
+  BuildSignatureHeaderError(&'static str),
 
   /// Error in building signature base
   #[error("Failed to build signature base: {0}")]
-  BuildSignatureBaseError(String),
+  BuildSignatureBaseError(&'static str),
 
   /// Expired signature params
   #[error("Expired signature params: {0}")]
-  ExpiredSignatureParams(String),
+  ExpiredSignatureParams(&'static str),
 
   /// Invalid algorithm name
   #[error("Invalid algorithm name: {0}")]
@@ -64,5 +66,5 @@ pub enum HttpSigError {
   /* ----- Other errors ----- */
   /// NotYetImplemented
   #[error("Not yet implemented: {0}")]
-  NotYetImplemented(String),
+  NotYetImplemented(&'static str),
 }

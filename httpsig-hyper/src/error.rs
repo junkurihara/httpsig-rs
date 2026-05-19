@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use httpsig::prelude::HttpSigError;
 use thiserror::Error;
 
@@ -9,7 +11,7 @@ pub type HyperSigResult<T> = std::result::Result<T, HyperSigError>;
 pub enum HyperSigError {
   /// No signature headers found
   #[error("No signature headers found: {0}")]
-  NoSignatureHeaders(String),
+  NoSignatureHeaders(&'static str),
 
   /// Failed to parse signature headers
   #[error("Failed to stringify signature headers: {0}")]
@@ -21,17 +23,17 @@ pub enum HyperSigError {
 
   /// Invalid component name
   #[error("Invalid component name: {0}")]
-  InvalidComponentName(String),
+  InvalidComponentName(Cow<'static, str>),
 
   /// Invalid component param
   #[error("Invalid component param: {0}")]
-  InvalidComponentParam(String),
+  InvalidComponentParam(Cow<'static, str>),
 
   /// Invalid signature
   #[error("Invalid signature: {0}")]
-  InvalidSignature(String),
+  InvalidSignature(&'static str),
 
-  /// Inherited from HttpSigError
+  /// Inherited from [`HttpSigError`].
   #[error("HttpSigError: {0}")]
   HttpSigError(#[from] HttpSigError),
 }

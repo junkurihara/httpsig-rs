@@ -36,10 +36,13 @@ pub struct HttpSignatureParams {
 impl HttpSignatureParams {
   /// Create new HttpSignatureParams object for the given covered components only with `created`` current timestamp.
   pub fn try_new(covered_components: &[HttpMessageComponentId]) -> HttpSigResult<Self> {
-    let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let created = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_secs();
     if !has_unique_elements(covered_components.iter()) {
       return Err(HttpSigError::InvalidSignatureParams(
-        "duplicate covered component ids".to_string(),
+        "duplicate covered component ids",
       ));
     }
 
@@ -88,7 +91,10 @@ impl HttpSignatureParams {
 
   /// Set `keyid` and `alg` from the signing key
   pub fn set_key_info(&mut self, key: &impl SigningKey) -> &mut Self {
-    self.keyid = Some(key.key_id().to_string());
+    #[cfg(feature = "key-id")]
+    {
+      self.keyid = Some(key.key_id().to_string());
+    }
     self.alg = Some(key.alg().to_string());
     self
   }
@@ -113,7 +119,11 @@ impl HttpSignatureParams {
   /// If `exp` field is not present, it always returns false.
   pub fn is_expired(&self) -> bool {
     if let Some(exp) = self.expires {
-      exp < SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+      exp
+        < SystemTime::now()
+          .duration_since(UNIX_EPOCH)
+          .unwrap()
+          .as_secs()
     } else {
       false
     }
@@ -122,13 +132,16 @@ impl HttpSignatureParams {
 
 impl std::fmt::Display for HttpSignatureParams {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let joined = self.covered_components.iter().fold("".to_string(), |acc, v| {
-      if acc.is_empty() {
-        v.to_string()
-      } else {
-        format!("{acc} {v}")
-      }
-    });
+    let joined = self
+      .covered_components
+      .iter()
+      .fold("".to_string(), |acc, v| {
+        if acc.is_empty() {
+          v.to_string()
+        } else {
+          format!("{acc} {v}")
+        }
+      });
     let mut s: String = format!("({})", joined);
     if self.created.is_some() {
       s.push_str(&format!(";created={}", self.created.unwrap()));
@@ -157,7 +170,9 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
   /// Convert from ListEntry to HttpSignatureParams
   fn try_from(value: &ListEntry) -> HttpSigResult<Self> {
     if !matches!(value, ListEntry::InnerList(_)) {
-      return Err(HttpSigError::InvalidSignatureParams("Invalid signature params".to_string()));
+      return Err(HttpSigError::InvalidSignatureParams(
+        "Invalid signature params",
+      ));
     }
     let inner_list_with_params = match value {
       ListEntry::InnerList(v) => v,
@@ -176,7 +191,7 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
 
     if !has_unique_elements(covered_components.iter()) {
       return Err(HttpSigError::InvalidSignatureParams(
-        "duplicate covered component ids".to_string(),
+        "duplicate covered component ids",
       ));
     }
 
@@ -217,7 +232,9 @@ impl TryFrom<&str> for HttpSignatureParams {
       .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
     // let sfv_parsed = Parser::parse_list(value.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
     if sfv_parsed.len() != 1 || !matches!(sfv_parsed[0], ListEntry::InnerList(_)) {
-      return Err(HttpSigError::InvalidSignatureParams("Invalid signature params".to_string()));
+      return Err(HttpSigError::InvalidSignatureParams(
+        "Invalid signature params",
+      ));
     }
     HttpSignatureParams::try_from(&sfv_parsed[0])
   }
@@ -226,15 +243,19 @@ impl TryFrom<&str> for HttpSignatureParams {
 #[cfg(test)]
 mod tests {
   use super::*;
+  #[cfg(feature = "ed25519-signature")]
   use crate::crypto::SecretKey;
+  #[cfg(feature = "ed25519-signature")]
   const EDDSA_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIDSHAE++q1BP7T8tk+mJtS+hLf81B0o6CFyWgucDFN/C
 -----END PRIVATE KEY-----
 "##;
+  #[cfg(feature = "ed25519-signature")]
   const _EDDSA_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 -----END PUBLIC KEY-----
 "##;
+  #[cfg(feature = "ed25519-signature")]
   const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=";
 
   fn build_covered_components() -> Vec<HttpMessageComponentId> {
@@ -263,6 +284,7 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert_eq!(params.covered_components.len(), 7);
   }
 
+  #[cfg(feature = "ed25519-signature")]
   #[test]
   fn test_set_key_info() {
     let mut params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
@@ -286,7 +308,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 
   #[test]
   fn test_from_string_signature_params_without_param() {
-    let value = r##"("@method" "@path" "@scheme" "@authority" "content-type" "date" "content-length")"##;
+    let value =
+      r##"("@method" "@path" "@scheme" "@authority" "content-type" "date" "content-length")"##;
     let params = HttpSignatureParams::try_from(value);
     assert!(params.is_ok());
     let params = params.unwrap();
@@ -299,9 +322,11 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert_eq!(params.covered_components.len(), 7);
   }
 
+  #[cfg(feature = "ed25519-signature")]
   #[test]
   fn test_from_string_signature_params() {
-    const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
+    const SIGPARA: &str =
+      r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
     let values = vec![
       (
         r##""@method" "@path" "@scheme";req "@authority" "content-type";bs "date" "content-length""##,

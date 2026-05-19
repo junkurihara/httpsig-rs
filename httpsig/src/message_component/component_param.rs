@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::error::{HttpSigError, HttpSigResult};
 use sfv::{FieldType, Parser};
 
@@ -24,15 +26,17 @@ pub enum HttpMessageComponentParam {
   Name(String),
 }
 
-impl From<HttpMessageComponentParam> for String {
-  fn from(val: HttpMessageComponentParam) -> Self {
+impl From<&HttpMessageComponentParam> for Cow<'static, str> {
+  fn from(val: &HttpMessageComponentParam) -> Self {
     match val {
-      HttpMessageComponentParam::Sf => "sf".to_string(),
-      HttpMessageComponentParam::Key(val) => format!("key=\"{val}\""),
-      HttpMessageComponentParam::Bs => "bs".to_string(),
-      HttpMessageComponentParam::Tr => "tr".to_string(),
-      HttpMessageComponentParam::Req => "req".to_string(),
-      HttpMessageComponentParam::Name(v) => format!("name=\"{v}\""),
+      HttpMessageComponentParam::Sf => "sf".into(),
+      // join allocates String with exact required capacity without reallocations
+      HttpMessageComponentParam::Key(val) => ["key=\"", val.as_str(), "\""].join("").into(),
+      HttpMessageComponentParam::Bs => "bs".into(),
+      HttpMessageComponentParam::Tr => "tr".into(),
+      HttpMessageComponentParam::Req => "req".into(),
+      // join allocates String with exact required capacity without reallocations
+      HttpMessageComponentParam::Name(v) => ["name=\"", v.as_str(), "\""].join("").into(),
     }
   }
 }
@@ -70,7 +74,11 @@ pub struct HttpMessageComponentParams(pub IndexSet<HttpMessageComponentParam>);
 
 impl std::hash::Hash for HttpMessageComponentParams {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    let mut params = self.0.iter().map(|v| v.clone().into()).collect::<Vec<String>>();
+    let mut params = self
+      .0
+      .iter()
+      .map(Cow::from)
+      .collect::<Vec<Cow<'static, str>>>();
     params.sort();
     params.hash(state);
   }
@@ -92,7 +100,12 @@ impl std::fmt::Display for HttpMessageComponentParams {
       write!(
         f,
         ";{}",
-        self.0.iter().map(|v| v.clone().into()).collect::<Vec<String>>().join(";")
+        self
+          .0
+          .iter()
+          .map(Cow::from)
+          .collect::<Vec<Cow<'static, str>>>()
+          .join(";")
       )
     } else {
       Ok(())
@@ -107,15 +120,21 @@ pub(super) fn handle_params_sf(field_values: &mut [String]) -> HttpSigResult<()>
     .iter()
     .map(|v| {
       if let Ok(list) = Parser::new(v).parse::<sfv::List>() {
-        list.serialize().ok_or("Failed to serialize structured field value for sf")
+        list
+          .serialize()
+          .ok_or("Failed to serialize structured field value for sf")
       } else if let Ok(dict) = Parser::new(v).parse::<sfv::Dictionary>() {
-        dict.serialize().ok_or("Failed to serialize structured field value for sf")
+        dict
+          .serialize()
+          .ok_or("Failed to serialize structured field value for sf")
       } else {
         Err("invalid structured field value for sf")
       }
     })
     .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}")))?;
+    .map_err(|e| {
+      HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}"))
+    })?;
 
   field_values.iter_mut().zip(parsed_list).for_each(|(v, p)| {
     *v = p;
@@ -126,13 +145,18 @@ pub(super) fn handle_params_sf(field_values: &mut [String]) -> HttpSigResult<()>
 
 /* ---------------------------------------------------------------- */
 /// Handle `key` parameter, returns new field values
-pub(super) fn handle_params_key_into(field_values: &[String], key: &str) -> HttpSigResult<Vec<String>> {
+pub(super) fn handle_params_key_into(
+  field_values: &[String],
+  key: &str,
+) -> HttpSigResult<Vec<String>> {
   let dicts = field_values
     .iter()
     .map(|v| Parser::new(v.as_str()).parse() as Result<sfv::Dictionary, _>)
     // Parser::parse_dictionary(v.as_bytes()))
     .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}")))?;
+    .map_err(|e| {
+      HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}"))
+    })?;
 
   let found_entries = dicts
     .into_iter()
@@ -144,7 +168,9 @@ pub(super) fn handle_params_key_into(field_values: &[String], key: &str) -> Http
       })
     })
     .collect::<Option<Vec<_>>>()
-    .ok_or_else(|| HttpSigError::InvalidComponentParam(format!("Failed to serialize structured field value")))?;
+    .ok_or_else(|| {
+      HttpSigError::InvalidComponentParam(format!("Failed to serialize structured field value"))
+    })?;
 
   Ok(found_entries)
 }
@@ -165,11 +191,16 @@ mod tests {
     // Parsing structured field value of List type.
     let list_header_input = "  1; a=tok, (\"foo\"   \"bar\" );baz, (  )";
     let list = Parser::new(list_header_input).parse::<sfv::List>().unwrap();
-    assert_eq!(list.serialize().unwrap(), "1;a=tok, (\"foo\" \"bar\");baz, ()");
+    assert_eq!(
+      list.serialize().unwrap(),
+      "1;a=tok, (\"foo\" \"bar\");baz, ()"
+    );
 
     // Parsing structured field value of Dictionary type.
     let dict_header_input = "a=?0, b, c; foo=bar, rating=1.5, fruits=(apple pear), d";
-    let dict = Parser::new(dict_header_input).parse::<sfv::Dictionary>().unwrap();
+    let dict = Parser::new(dict_header_input)
+      .parse::<sfv::Dictionary>()
+      .unwrap();
     assert_eq!(
       dict.serialize().unwrap(),
       "a=?0, b, c;foo=bar, rating=1.5, fruits=(apple pear), d"

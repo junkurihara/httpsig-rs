@@ -21,7 +21,13 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
 "##;
 // const EDDSA_KEY_ID: &str = "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=";
 const COVERED_COMPONENTS_REQ: &[&str] = &["@method", "date", "content-type", "content-digest"];
-const COVERED_COMPONENTS_RES: &[&str] = &["@status", "\"@method\";req", "date", "content-type", "\"content-digest\";req"];
+const COVERED_COMPONENTS_RES: &[&str] = &[
+  "@status",
+  "\"@method\";req",
+  "date",
+  "content-type",
+  "\"content-digest\";req",
+];
 
 async fn build_request() -> Request<BoxBody> {
   let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
@@ -33,7 +39,10 @@ async fn build_request() -> Request<BoxBody> {
     .header("content-type", "application/json-patch+json")
     .body(body)
     .unwrap();
-  req.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
+  req
+    .set_content_digest(&ContentDigestType::Sha256)
+    .await
+    .unwrap()
 }
 
 async fn build_response() -> Response<BoxBody> {
@@ -45,7 +54,10 @@ async fn build_response() -> Response<BoxBody> {
     .header("content-type", "application/json-patch+json")
     .body(body)
     .unwrap();
-  res.set_content_digest(&ContentDigestType::Sha256).await.unwrap()
+  res
+    .set_content_digest(&ContentDigestType::Sha256)
+    .await
+    .unwrap()
 }
 
 fn build_covered_components_req() -> Vec<HttpMessageComponentId> {
@@ -64,7 +76,9 @@ fn build_covered_components_res() -> Vec<HttpMessageComponentId> {
 
 /// Helper to build a request with query parameters (no content-digest needed)
 fn build_query_request() -> Request<BoxBody> {
-  let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+  let body = Full::new(bytes::Bytes::new())
+    .map_err(|never| match never {})
+    .boxed();
   Request::builder()
     .method("GET")
     .uri("https://example.com/path?foo=bar&id=123&x=y")
@@ -78,25 +92,27 @@ fn build_query_request() -> Request<BoxBody> {
 #[tokio::test]
 async fn test_extract_component_from_request() {
   let req = build_request().await;
-  let req_or_res = RequestOrResponse::Request(&req);
 
   let component_id_method = HttpMessageComponentId::try_from("\"@method\"").unwrap();
-  let component = extract_http_message_component(&req_or_res, &component_id_method).unwrap();
+  let component = extract_http_message_component(&req, &component_id_method).unwrap();
   assert_eq!(component.to_string(), "\"@method\": GET");
 
   let component_id = HttpMessageComponentId::try_from("\"date\"").unwrap();
-  let component = extract_http_message_component(&req_or_res, &component_id).unwrap();
-  assert_eq!(component.to_string(), "\"date\": Sun, 09 May 2021 18:30:00 GMT");
+  let component = extract_http_message_component(&req, &component_id).unwrap();
+  assert_eq!(
+    component.to_string(),
+    "\"date\": Sun, 09 May 2021 18:30:00 GMT"
+  );
 
   let component_id = HttpMessageComponentId::try_from("content-type").unwrap();
-  let component = extract_http_field(&req_or_res, &component_id).unwrap();
+  let component = extract_http_field(&req, &component_id).unwrap();
   assert_eq!(
     component.to_string(),
     "\"content-type\": application/json, application/json-patch+json"
   );
 
   let component_id = HttpMessageComponentId::try_from("content-digest").unwrap();
-  let component = extract_http_message_component(&req_or_res, &component_id).unwrap();
+  let component = extract_http_message_component(&req, &component_id).unwrap();
   assert_eq!(
     component.to_string(),
     "\"content-digest\": sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"
@@ -112,12 +128,20 @@ async fn test_extract_signature_params_from_request() {
     http::HeaderValue::from_static(r##"sig1=("@method" "@authority")"##),
   );
   let component_id = HttpMessageComponentId::try_from("@signature-params").unwrap();
-  let req_or_res = RequestOrResponse::Request(&req);
-  let component = extract_http_message_component(&req_or_res, &component_id).unwrap();
-  assert_eq!(component.to_string(), "\"@signature-params\": (\"@method\" \"@authority\")");
+  let component = extract_http_message_component(&req, &component_id).unwrap();
+  assert_eq!(
+    component.to_string(),
+    "\"@signature-params\": (\"@method\" \"@authority\")"
+  );
   assert_eq!(component.value.to_string(), r##"("@method" "@authority")"##);
-  assert_eq!(component.value.as_field_value(), r##"sig1=("@method" "@authority")"##);
-  assert_eq!(component.value.as_component_value(), r##"("@method" "@authority")"##);
+  assert_eq!(
+    component.value.to_field_value(),
+    r##"sig1=("@method" "@authority")"##
+  );
+  assert_eq!(
+    component.value.as_component_value(),
+    r##"("@method" "@authority")"##
+  );
   assert_eq!(component.value.key(), Some("sig1"));
 }
 
@@ -125,12 +149,17 @@ async fn test_extract_signature_params_from_request() {
 async fn test_build_signature_base_from_request() {
   let req = build_request().await;
 
-  const SIGPARA: &str = r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
-  let values = (r##""@method" "content-type" "date" "content-digest""##, SIGPARA);
-  let signature_params = HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
+  const SIGPARA: &str =
+    r##";created=1704972031;alg="ed25519";keyid="gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=""##;
+  let values = (
+    r##""@method" "content-type" "date" "content-digest""##,
+    SIGPARA,
+  );
+  let signature_params =
+    HttpSignatureParams::try_from(format!("({}){}", values.0, values.1).as_str()).unwrap();
 
-  let req_or_res = RequestOrResponse::Request(&req);
-  let signature_base = build_signature_base(&req_or_res, &signature_params, None as Option<&Request<()>>).unwrap();
+  let signature_base =
+    build_signature_base(&req, &signature_params, None as Option<&Request<()>>).unwrap();
   assert_eq!(
     signature_base.to_string(),
     r##""@method": GET
@@ -156,8 +185,7 @@ async fn test_extract_tuples_from_request() {
     ),
   );
 
-  let req_or_res = RequestOrResponse::Request(&req);
-  let tuples = extract_signature_headers_with_name(&req_or_res).unwrap();
+  let tuples = extract_signature_headers_with_name(&req).unwrap();
   assert_eq!(tuples.len(), 1);
   assert_eq!(tuples.get("sig11").unwrap().signature_name(), "sig11");
   assert_eq!(
@@ -175,9 +203,19 @@ async fn test_set_verify_message_signature_req() {
   let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
   signature_params.set_key_info(&secret_key);
 
-  req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
-  let signature_input = req.headers().get("signature-input").unwrap().to_str().unwrap();
-  assert!(signature_input.starts_with(r##"sig=("@method" "date" "content-type" "content-digest")"##));
+  req
+    .set_message_signature(&signature_params, &secret_key, None)
+    .await
+    .unwrap();
+  let signature_input = req
+    .headers()
+    .get("signature-input")
+    .unwrap()
+    .to_str()
+    .unwrap();
+  assert!(
+    signature_input.starts_with(r##"sig=("@method" "date" "content-type" "content-digest")"##)
+  );
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
   let verification_res = req.verify_message_signature(&public_key, None).await;
@@ -198,11 +236,19 @@ async fn test_set_verify_message_signature_res() {
     .set_message_signature(&signature_params, &secret_key, None, Some(&req))
     .await
     .unwrap();
-  let signature_input = res.headers().get("signature-input").unwrap().to_str().unwrap();
-  assert!(signature_input.starts_with(r##"sig=("@status" "@method";req "date" "content-type" "content-digest";req)"##));
+  let signature_input = res
+    .headers()
+    .get("signature-input")
+    .unwrap()
+    .to_str()
+    .unwrap();
+  assert!(signature_input
+    .starts_with(r##"sig=("@status" "@method";req "date" "content-type" "content-digest";req)"##));
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
-  let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
+  let verification_res = res
+    .verify_message_signature(&public_key, None, Some(&req))
+    .await;
   assert!(verification_res.is_ok());
 }
 
@@ -216,7 +262,10 @@ async fn test_expired_signature() {
   signature_params.set_expires(created - 1);
   assert!(signature_params.is_expired());
 
-  req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+  req
+    .set_message_signature(&signature_params, &secret_key, None)
+    .await
+    .unwrap();
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
   let verification_res = req.verify_message_signature(&public_key, None).await;
@@ -235,8 +284,7 @@ async fn test_set_verify_with_signature_name() {
     .await
     .unwrap();
 
-  let req_or_res = RequestOrResponse::Request(&req);
-  let signature_headers_map = extract_signature_headers_with_name(&req_or_res).unwrap();
+  let signature_headers_map = extract_signature_headers_with_name(&req).unwrap();
   assert_eq!(signature_headers_map.len(), 1);
   assert_eq!(signature_headers_map[0].signature_name(), "custom_sig_name");
 
@@ -252,14 +300,21 @@ async fn test_set_verify_with_key_id() {
   let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
   signature_params.set_key_info(&secret_key);
 
-  req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+  req
+    .set_message_signature(&signature_params, &secret_key, None)
+    .await
+    .unwrap();
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
   let key_id = public_key.key_id();
-  let verification_res = req.verify_message_signature(&public_key, Some(&key_id)).await;
+  let verification_res = req
+    .verify_message_signature(&public_key, Some(&key_id))
+    .await;
   assert!(verification_res.is_ok());
 
-  let verification_res = req.verify_message_signature(&public_key, Some("NotFoundKeyId")).await;
+  let verification_res = req
+    .verify_message_signature(&public_key, Some("NotFoundKeyId"))
+    .await;
   assert!(verification_res.is_err());
 }
 
@@ -269,13 +324,17 @@ const HMACSHA256_SECRET_KEY: &str =
 #[tokio::test]
 async fn test_set_verify_with_key_id_hmac_sha256() {
   let mut req = build_request().await;
-  let secret_key = SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
+  let secret_key =
+    SharedKey::from_base64(&AlgorithmName::HmacSha256, HMACSHA256_SECRET_KEY).unwrap();
   let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
   signature_params.set_key_info(&secret_key);
   // Random nonce is highly recommended for HMAC
   signature_params.set_random_nonce();
 
-  req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+  req
+    .set_message_signature(&signature_params, &secret_key, None)
+    .await
+    .unwrap();
 
   let org_key_id = VerifyingKey::key_id(&secret_key);
   let (alg, key_id) = req.get_alg_key_ids().unwrap().into_iter().next().unwrap().1;
@@ -283,10 +342,14 @@ async fn test_set_verify_with_key_id_hmac_sha256() {
   let key_id = key_id.unwrap();
   assert_eq!(org_key_id, key_id);
   let verification_key = SharedKey::from_base64(&alg, HMACSHA256_SECRET_KEY).unwrap();
-  let verification_res = req.verify_message_signature(&verification_key, Some(&key_id)).await;
+  let verification_res = req
+    .verify_message_signature(&verification_key, Some(&key_id))
+    .await;
   assert!(verification_res.is_ok());
 
-  let verification_res = req.verify_message_signature(&verification_key, Some("NotFoundKeyId")).await;
+  let verification_res = req
+    .verify_message_signature(&verification_key, Some("NotFoundKeyId"))
+    .await;
   assert!(verification_res.is_err());
 }
 
@@ -297,11 +360,17 @@ async fn test_get_alg_key_ids() {
   let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
   signature_params.set_key_info(&secret_key);
 
-  req.set_message_signature(&signature_params, &secret_key, None).await.unwrap();
+  req
+    .set_message_signature(&signature_params, &secret_key, None)
+    .await
+    .unwrap();
   let key_ids = req.get_alg_key_ids().unwrap();
   assert_eq!(key_ids.len(), 1);
   assert_eq!(key_ids[0].0.as_ref().unwrap(), &AlgorithmName::Ed25519);
-  assert_eq!(key_ids[0].1.as_ref().unwrap(), "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is=");
+  assert_eq!(
+    key_ids[0].1.as_ref().unwrap(),
+    "gjrE7ACMxgzYfFHgabgf4kLTg1eKIdsJ94AiFTFj1is="
+  );
 }
 
 const P256_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
@@ -320,22 +389,30 @@ async fn test_set_verify_multiple_signatures() {
   let mut req = build_request().await;
 
   let secret_key_eddsa = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
-  let mut signature_params_eddsa = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
+  let mut signature_params_eddsa =
+    HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
   signature_params_eddsa.set_key_info(&secret_key_eddsa);
 
-  let secret_key_p256 = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
-  let mut signature_params_hmac = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
+  let secret_key_p256 =
+    SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
+  let mut signature_params_hmac =
+    HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
   signature_params_hmac.set_key_info(&secret_key_p256);
 
   let params_key_name = &[
-    (&signature_params_eddsa, &secret_key_eddsa, Some("eddsa_sig")),
+    (
+      &signature_params_eddsa,
+      &secret_key_eddsa,
+      Some("eddsa_sig"),
+    ),
     (&signature_params_hmac, &secret_key_p256, Some("p256_sig")),
   ];
 
   req.set_message_signatures(params_key_name).await.unwrap();
 
   let public_key_eddsa = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
-  let public_key_p256 = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY).unwrap();
+  let public_key_p256 =
+    PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY).unwrap();
   let key_id_eddsa = public_key_eddsa.key_id();
   let key_id_p256 = public_key_p256.key_id();
 
@@ -362,7 +439,9 @@ fn test_blocking_set_verify_message_signature_req() {
   let mut signature_params = HttpSignatureParams::try_new(&build_covered_components_req()).unwrap();
   signature_params.set_key_info(&secret_key);
 
-  req.set_message_signature_sync(&signature_params, &secret_key, None).unwrap();
+  req
+    .set_message_signature_sync(&signature_params, &secret_key, None)
+    .unwrap();
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
   let verification_res = req.verify_message_signature_sync(&public_key, None);
@@ -413,7 +492,10 @@ fn test_query_param_sign_verify_sync() {
     req.headers().get("signature-input").is_some(),
     "signature-input header is missing"
   );
-  assert!(req.headers().get("signature").is_some(), "signature header is missing");
+  assert!(
+    req.headers().get("signature").is_some(),
+    "signature header is missing"
+  );
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
   let verification_res = req.verify_message_signature_sync(&public_key, None);
@@ -449,7 +531,10 @@ async fn test_query_param_sign_verify_async() {
     req.headers().get("signature-input").is_some(),
     "signature-input header is missing"
   );
-  assert!(req.headers().get("signature").is_some(), "signature header is missing");
+  assert!(
+    req.headers().get("signature").is_some(),
+    "signature header is missing"
+  );
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
   let verification_res = req.verify_message_signature(&public_key, None).await;
@@ -465,12 +550,11 @@ async fn test_query_param_sign_verify_async() {
 #[test]
 fn test_extract_derived_component_rejects_name_on_non_query_param() {
   let req = build_query_request();
-  let req_or_res = RequestOrResponse::Request(&req);
   // `@method;name="foo"` is invalid — `name` is only for `@query-param`
   let id = HttpMessageComponentId::try_from("\"@method\";name=\"foo\"");
   // component_id parsing itself may reject this; if it doesn't, extraction should
   if let Ok(id) = id {
-    let result = extract_derived_component(&req_or_res, &id);
+    let result = extract_derived_component(&req, &id);
     assert!(result.is_err(), "expected error for `name` on `@method`");
   }
 }
@@ -478,12 +562,14 @@ fn test_extract_derived_component_rejects_name_on_non_query_param() {
 #[test]
 fn test_extract_derived_component_rejects_sf_on_derived() {
   let req = build_query_request();
-  let req_or_res = RequestOrResponse::Request(&req);
   // `@method;sf` is invalid — `sf` is only for HTTP field components
   let id = HttpMessageComponentId::try_from("\"@method\";sf");
   if let Ok(id) = id {
-    let result = extract_derived_component(&req_or_res, &id);
-    assert!(result.is_err(), "expected error for `sf` on derived component");
+    let result = extract_derived_component(&req, &id);
+    assert!(
+      result.is_err(),
+      "expected error for `sf` on derived component"
+    );
   }
 }
 
@@ -492,7 +578,9 @@ fn test_extract_derived_component_rejects_sf_on_derived() {
 #[tokio::test]
 async fn test_set_message_signature_propagates_build_error() {
   // Use `@status` on a request — this is invalid and must return Err, not Ok
-  let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+  let body = Full::new(bytes::Bytes::new())
+    .map_err(|never| match never {})
+    .boxed();
   let mut req: Request<BoxBody> = Request::builder()
     .method("GET")
     .uri("https://example.com/")
@@ -507,14 +595,19 @@ async fn test_set_message_signature_propagates_build_error() {
   let result = req
     .set_message_signature(&signature_params, &secret_key, None as Option<&str>)
     .await;
-  assert!(result.is_err(), "expected Err when using `@status` on request, got Ok");
+  assert!(
+    result.is_err(),
+    "expected Err when using `@status` on request, got Ok"
+  );
 }
 
 #[cfg(feature = "blocking")]
 #[test]
 fn test_set_message_signature_sync_propagates_build_error() {
   // Same as above but for sync path
-  let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+  let body = Full::new(bytes::Bytes::new())
+    .map_err(|never| match never {})
+    .boxed();
   let mut req: Request<BoxBody> = Request::builder()
     .method("GET")
     .uri("https://example.com/")
@@ -527,7 +620,10 @@ fn test_set_message_signature_sync_propagates_build_error() {
   signature_params.set_key_info(&secret_key);
 
   let result = req.set_message_signature_sync(&signature_params, &secret_key, None);
-  assert!(result.is_err(), "expected Err when using `@status` on request, got Ok");
+  assert!(
+    result.is_err(),
+    "expected Err when using `@status` on request, got Ok"
+  );
 }
 
 // ---- RFC 9421 §2.2: Derived component extraction values ----
@@ -536,41 +632,43 @@ fn test_set_message_signature_sync_propagates_build_error() {
 fn test_extract_derived_components_values() {
   let req = build_query_request();
   // URI: https://example.com/path?foo=bar&id=123&x=y
-  let req_or_res = RequestOrResponse::Request(&req);
 
   // @method (§2.2.1)
   let id = HttpMessageComponentId::try_from("@method").unwrap();
-  let c = extract_derived_component(&req_or_res, &id).unwrap();
+  let c = extract_derived_component(&req, &id).unwrap();
   assert_eq!(c.to_string(), "\"@method\": GET");
 
   // @target-uri (§2.2.2)
   let id = HttpMessageComponentId::try_from("@target-uri").unwrap();
-  let c = extract_derived_component(&req_or_res, &id).unwrap();
-  assert_eq!(c.to_string(), "\"@target-uri\": https://example.com/path?foo=bar&id=123&x=y");
+  let c = extract_derived_component(&req, &id).unwrap();
+  assert_eq!(
+    c.to_string(),
+    "\"@target-uri\": https://example.com/path?foo=bar&id=123&x=y"
+  );
 
   // @authority (§2.2.3)
   let id = HttpMessageComponentId::try_from("@authority").unwrap();
-  let c = extract_derived_component(&req_or_res, &id).unwrap();
+  let c = extract_derived_component(&req, &id).unwrap();
   assert_eq!(c.to_string(), "\"@authority\": example.com");
 
   // @scheme (§2.2.4)
   let id = HttpMessageComponentId::try_from("@scheme").unwrap();
-  let c = extract_derived_component(&req_or_res, &id).unwrap();
+  let c = extract_derived_component(&req, &id).unwrap();
   assert_eq!(c.to_string(), "\"@scheme\": https");
 
   // @path (§2.2.6)
   let id = HttpMessageComponentId::try_from("@path").unwrap();
-  let c = extract_derived_component(&req_or_res, &id).unwrap();
+  let c = extract_derived_component(&req, &id).unwrap();
   assert_eq!(c.to_string(), "\"@path\": /path");
 
   // @query (§2.2.7)
   let id = HttpMessageComponentId::try_from("@query").unwrap();
-  let c = extract_derived_component(&req_or_res, &id).unwrap();
+  let c = extract_derived_component(&req, &id).unwrap();
   assert_eq!(c.to_string(), "\"@query\": ?foo=bar&id=123&x=y");
 
   // @query-param;name="id" (§2.2.8)
   let id = HttpMessageComponentId::try_from("\"@query-param\";name=\"id\"").unwrap();
-  let c = extract_derived_component(&req_or_res, &id).unwrap();
+  let c = extract_derived_component(&req, &id).unwrap();
   assert_eq!(c.to_string(), "\"@query-param\";name=\"id\": 123");
 }
 
@@ -581,7 +679,9 @@ async fn test_response_with_query_param_req_sign_verify() {
   // Build a request with query params
   let req = build_query_request();
   // Build a response
-  let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+  let body = Full::new(bytes::Bytes::new())
+    .map_err(|never| match never {})
+    .boxed();
   let mut res: Response<BoxBody> = Response::builder().status(200).body(body).unwrap();
 
   // Response signature covering @status + @query-param;name="id";req
@@ -601,20 +701,37 @@ async fn test_response_with_query_param_req_sign_verify() {
     .await
     .unwrap();
 
-  assert!(req.headers().get("signature-input").is_none(), "request should not be modified");
-  assert!(res.headers().get("signature-input").is_some(), "signature-input header is missing on response");
-  assert!(res.headers().get("signature").is_some(), "signature header is missing on response");
+  assert!(
+    req.headers().get("signature-input").is_none(),
+    "request should not be modified"
+  );
+  assert!(
+    res.headers().get("signature-input").is_some(),
+    "signature-input header is missing on response"
+  );
+  assert!(
+    res.headers().get("signature").is_some(),
+    "signature header is missing on response"
+  );
 
   let public_key = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
-  let verification_res = res.verify_message_signature(&public_key, None, Some(&req)).await;
-  assert!(verification_res.is_ok(), "signature verification failed: {:?}", verification_res.err());
+  let verification_res = res
+    .verify_message_signature(&public_key, None, Some(&req))
+    .await;
+  assert!(
+    verification_res.is_ok(),
+    "signature verification failed: {:?}",
+    verification_res.err()
+  );
 }
 
 // ---- RFC 9421: Response must reject request-derived components without `req` ----
 
 #[tokio::test]
 async fn test_response_rejects_derived_component_without_req() {
-  let body = Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed();
+  let body = Full::new(bytes::Bytes::new())
+    .map_err(|never| match never {})
+    .boxed();
   let mut res: Response<BoxBody> = Response::builder().status(200).body(body).unwrap();
 
   // `@method` without `req` on a response — must fail
@@ -628,7 +745,15 @@ async fn test_response_rejects_derived_component_without_req() {
   signature_params.set_key_info(&secret_key);
 
   let result = res
-    .set_message_signature(&signature_params, &secret_key, None, None as Option<&Request<()>>)
+    .set_message_signature(
+      &signature_params,
+      &secret_key,
+      None,
+      None as Option<&Request<()>>,
+    )
     .await;
-  assert!(result.is_err(), "expected Err when using `@method` without `req` on response");
+  assert!(
+    result.is_err(),
+    "expected Err when using `@method` without `req` on response"
+  );
 }

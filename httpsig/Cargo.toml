@@ -14,36 +14,42 @@ rust-version.workspace = true
 
 [features]
 default = []
-rsa-signature = ["rsa"]
+ecdsa-p256-sha256-signature = ["dep:p256", "dep:sha2", "dep:ecdsa"]
+ecdsa-p384-sha384-signature = ["dep:p384", "dep:sha2", "dep:ecdsa"]
+ed25519-signature = ["dep:ed25519-compact"]
+hmac-sha256-signature = ["dep:hmac", "dep:sha2"]
+rsa-signature = ["dep:rsa"]
+key-id = ["dep:p256"]
+der = ["dep:pkcs8"]
+pem = ["der", "pkcs8/pem", "dep:spki", "spki/pem"]
 
 [dependencies]
 thiserror = { version = "2.0.18" }
 tracing = { version = "0.1.44" }
 rustc-hash = { version = "2.1.1" }
 indexmap = { version = "2.11.4" }
-rand = { version = "0.10.0" }
+rand = { version = "0.10" }
 
 # crypto
-pkcs8 = { version = "0.10.2", default-features = false, features = ["pem"] }
-spki = { version = "0.7.3", default-features = false, features = ["pem"] }
-sec1 = { version = "0.7.3", default-features = false, features = ["der"] }
-ed25519-compact = { version = "2.2.0", default-features = false, features = [
+pkcs8 = { version = "0.10.2", optional = true }
+spki = { version = "0.7.3", optional = true }
+sec1 = { version = "0.7.3", default-features = false }
+ed25519-compact = { version = "2.2", default-features = false, features = [
   "random",
-] }
-ecdsa = { version = "0.16.9", default-features = false, features = [
+], optional = true }
+ecdsa = { version = "0.16", default-features = false, features = [
   "arithmetic",
-] }
-p256 = { version = "0.13.2", default-features = false, features = [
-  "arithmetic",
-  "ecdsa",
-] }
-p384 = { version = "0.13.1", default-features = false, features = [
+], optional = true }
+p256 = { version = "0.13", default-features = false, features = [
   "arithmetic",
   "ecdsa",
-] }
-hmac = { version = "0.12.1" }
-sha2 = { version = "0.10.9", default-features = false }
-bytes = { version = "1.11.1" }
+], optional = true }
+p384 = { version = "0.13", default-features = false, features = [
+  "arithmetic",
+  "ecdsa",
+], optional = true }
+hmac = { version = "0.12.1", optional = true }
+sha2 = { version = "0.10.9", default-features = false, optional = true }
 
 # rsa is optional
 rsa = { version = "0.10.0-rc.15", default-features = false, optional = true, features = [
@@ -58,4 +64,10 @@ base64 = { version = "0.22.1" }
 sfv = { version = "0.14.0" }
 
 [dev-dependencies]
+httpsig = { path = ".", features = [
+  "ed25519-signature",
+  "hmac-sha256-signature",
+  "pem",
+  "key-id",
+] }
 rand-085 = { package = "rand", version = "0.8.5" } # testing only

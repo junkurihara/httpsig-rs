@@ -13,7 +13,15 @@ rust-version.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["blocking"]
+default = ["blocking", "digest-sha256", "digest-sha512"]
+digest-sha256 = []
+digest-sha512 = []
+ed25519-signature = ["httpsig/ed25519-signature"]
+ecdsa-p256-sha256-signature = ["httpsig/ecdsa-p256-sha256-signature"]
+ecdsa-p384-sha384-signature = ["httpsig/ecdsa-p384-sha384-signature"]
+hmac-sha256-signature = ["httpsig/hmac-sha256-signature"]
+pem = ["httpsig/pem"]
+key-id = ["httpsig/key-id"]
 blocking = ["futures/executor"]
 rsa-signature = ["httpsig/rsa-signature"]
 
@@ -45,7 +53,34 @@ bytes = { version = "1.11.1" }
 
 
 [dev-dependencies]
+httpsig = { path = "../httpsig", version = "0.0.24", features = [
+  "ed25519-signature",
+  "ecdsa-p256-sha256-signature",
+  "hmac-sha256-signature",
+  "pem",
+  "key-id",
+] }
 tokio = { version = "1.49.0", default-features = false, features = [
   "macros",
   "rt-multi-thread",
 ] } # testing only
+
+[[example]]
+name = "hyper-response"
+required-features = [
+  "digest-sha256",
+  "ed25519-signature",
+  "hmac-sha256-signature",
+  "pem",
+]
+
+
+[[example]]
+name = "hyper-request"
+required-features = [
+  "digest-sha256",
+  "ed25519-signature",
+  "hmac-sha256-signature",
+  "pem",
+  "key-id",
+]
