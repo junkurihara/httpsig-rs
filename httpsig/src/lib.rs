@@ -21,8 +21,17 @@ pub mod prelude {
     };
   }
 
+  #[cfg(feature = "hmac-sha256-signature")]
+  pub use crate::crypto::SharedKey;
+  #[cfg(any(
+    feature = "ed25519-signature",
+    feature = "ecdsa-p256-sha256-signature",
+    feature = "ecdsa-p384-sha384-signature",
+    feature = "rsa-signature"
+  ))]
+  pub use crate::crypto::{PublicKey, SecretKey};
   pub use crate::{
-    crypto::{AlgorithmName, PublicKey, SecretKey, SharedKey, SigningKey, VerifyingKey},
+    crypto::{AlgorithmName, SigningKey, VerifyingKey},
     error::{HttpSigError, HttpSigResult},
     signature_base::{
       HttpSignature, HttpSignatureBase, HttpSignatureHeaders, HttpSignatureHeadersMap,
@@ -32,7 +41,7 @@ pub mod prelude {
 }
 
 /* ----------------------------------------------------------------- */
-#[cfg(all(test, feature = "ed25519-signature"))]
+#[cfg(test)]
 mod tests {
   use super::prelude::*;
   use base64::{engine::general_purpose, Engine as _};

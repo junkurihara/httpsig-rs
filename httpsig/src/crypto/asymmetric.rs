@@ -3,29 +3,58 @@ use crate::{
   error::{HttpSigError, HttpSigResult},
   trace::*,
 };
+#[cfg(all(
+  feature = "key-id",
+  any(
+    feature = "ecdsa-p256-sha256-signature",
+    feature = "ecdsa-p384-sha384-signature"
+  )
+))]
+use ecdsa::elliptic_curve::sec1::ToEncodedPoint;
+#[cfg(any(
+  feature = "ecdsa-p256-sha256-signature",
+  feature = "ecdsa-p384-sha384-signature"
+))]
 use ecdsa::{
-  elliptic_curve::{sec1::ToEncodedPoint, PublicKey as EcPublicKey, SecretKey as EcSecretKey},
+  elliptic_curve::{PublicKey as EcPublicKey, SecretKey as EcSecretKey},
   signature::{DigestSigner, DigestVerifier},
 };
 #[cfg(feature = "ed25519-signature")]
 use ed25519_compact::{PublicKey as Ed25519PublicKey, SecretKey as Ed25519SecretKey};
+#[cfg(feature = "ecdsa-p256-sha256-signature")]
 use p256::NistP256;
+#[cfg(feature = "ecdsa-p384-sha384-signature")]
 use p384::NistP384;
-use pkcs8::{der::Decode, Document, PrivateKeyInfo};
-use sha2::{Digest, Sha256, Sha384};
-use spki::SubjectPublicKeyInfoRef;
+#[cfg(feature = "pem")]
+use pkcs8::Document;
+#[cfg(feature = "der")]
+use pkcs8::{der::Decode, PrivateKeyInfo};
+#[cfg(any(
+  feature = "ecdsa-p256-sha256-signature",
+  feature = "ecdsa-p384-sha384-signature",
+  feature = "key-id"
+))]
+use sha2::Digest;
+
+#[cfg(all(feature = "rsa-signature", feature = "pem"))]
+use rsa::pkcs1::EncodeRsaPublicKey;
 
 #[cfg(feature = "rsa-signature")]
 use rsa::{
-  pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPublicKey},
+  pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey},
   pkcs1v15, pss,
   signature::{Keypair, RandomizedSigner, SignatureEncoding, Verifier},
   RsaPrivateKey, RsaPublicKey,
 };
 
+#[cfg(any(feature = "der", feature = "pem"))]
 #[allow(non_upper_case_globals, dead_code)]
 /// Algorithm OIDs
 mod algorithm_oids {
+  #[cfg(any(
+    feature = "ecdsa-p256-sha256-signature",
+    feature = "ecdsa-p384-sha384-signature"
+  ))]
   /// OID for `id-ecPublicKey`, if you're curious
   pub const EC: &str = "1.2.840.10045.2.1";
   #[cfg(feature = "ed25519-signature")]
@@ -35,11 +64,14 @@ mod algorithm_oids {
   /// OID for `id-rsaEncryption`, if you're curious
   pub const rsaEncryption: &str = "1.2.840.113549.1.1.1";
 }
+#[cfg(any(feature = "der", feature = "pem"))]
 #[allow(non_upper_case_globals, dead_code)]
 /// Params OIDs
 mod params_oids {
+  #[cfg(feature = "ecdsa-p256-sha256-signature")]
   // OID for the NIST P-256 elliptic curve.
   pub const Secp256r1: &str = "1.2.840.10045.3.1.7";
+  #[cfg(feature = "ecdsa-p384-sha384-signature")]
   // OID for the NIST P-384 elliptic curve.
   pub const Secp384r1: &str = "1.3.132.0.34";
 }
@@ -49,8 +81,10 @@ mod params_oids {
 /// Secret key for http signature
 /// Name conventions follow [Section-6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum SecretKey {
+  #[cfg(feature = "ecdsa-p384-sha384-signature")]
   /// ecdsa-p384-sha384
   EcdsaP384Sha384(EcSecretKey<NistP384>),
+  #[cfg(feature = "ecdsa-p256-sha256-signature")]
   /// ecdsa-p256-sha256
   EcdsaP256Sha256(EcSecretKey<NistP256>),
   #[cfg(feature = "ed25519-signature")]
@@ -67,18 +101,24 @@ impl SecretKey {
   /// from plain bytes
   pub fn from_bytes(alg: &AlgorithmName, bytes: &[u8]) -> HttpSigResult<Self> {
     match alg {
+      #[cfg(feature = "ecdsa-p256-sha256-signature")]
       AlgorithmName::EcdsaP256Sha256 => {
         debug!("Read P256 private key");
         let sk = EcSecretKey::from_bytes(bytes.into())
           .map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string().into()))?;
         Ok(Self::EcdsaP256Sha256(sk))
       }
+      #[cfg(feature = "ecdsa-p384-sha384-signature")]
       AlgorithmName::EcdsaP384Sha384 => {
         debug!("Read P384 private key");
         let sk = EcSecretKey::from_bytes(bytes.into())
           .map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string().into()))?;
         Ok(Self::EcdsaP384Sha384(sk))
       }
+      #[cfg(feature = "hmac-sha256-signature")]
+      AlgorithmName::HmacSha256 => Err(HttpSigError::ParsePrivateKeyError(
+        "Unsupported algorithm".into(),
+      )),
       #[cfg(feature = "ed25519-signature")]
       AlgorithmName::Ed25519 => {
         debug!("Read Ed25519 private key");
@@ -109,6 +149,7 @@ impl SecretKey {
       }
     }
   }
+  #[cfg(feature = "der")]
   /// parse der
   /// Derive secret key from der bytes
   pub fn from_der(alg: &AlgorithmName, der: &[u8]) -> HttpSigResult<Self> {
@@ -116,6 +157,10 @@ impl SecretKey {
       .map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string().into()))?;
 
     let sk_bytes = match pki.algorithm.oid.to_string().as_ref() {
+      #[cfg(any(
+        feature = "ecdsa-p256-sha256-signature",
+        feature = "ecdsa-p384-sha384-signature"
+      ))]
       // ec
       algorithm_oids::EC => {
         let param = pki
@@ -123,7 +168,9 @@ impl SecretKey {
           .parameters_oid()
           .map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string().into()))?;
         let algorithm_name = match param.to_string().as_ref() {
+          #[cfg(feature = "ecdsa-p256-sha256-signature")]
           params_oids::Secp256r1 => AlgorithmName::EcdsaP256Sha256,
+          #[cfg(feature = "ecdsa-p384-sha384-signature")]
           params_oids::Secp384r1 => AlgorithmName::EcdsaP384Sha384,
           _ => {
             return Err(HttpSigError::ParsePrivateKeyError(
@@ -179,6 +226,7 @@ impl SecretKey {
     Ok(sk)
   }
 
+  #[cfg(feature = "pem")]
   /// Derive secret key from pem string
   pub fn from_pem(alg: &AlgorithmName, pem: &str) -> HttpSigResult<Self> {
     let (tag, doc) = Document::from_pem(pem)
@@ -192,7 +240,9 @@ impl SecretKey {
   /// Get public key from secret key
   pub fn public_key(&self) -> PublicKey {
     match &self {
+      #[cfg(feature = "ecdsa-p256-sha256-signature")]
       Self::EcdsaP256Sha256(key) => PublicKey::EcdsaP256Sha256(key.public_key()),
+      #[cfg(feature = "ecdsa-p384-sha384-signature")]
       Self::EcdsaP384Sha384(key) => PublicKey::EcdsaP384Sha384(key.public_key()),
       #[cfg(feature = "ed25519-signature")]
       Self::Ed25519(key) => PublicKey::Ed25519(key.public_key()),
@@ -208,18 +258,20 @@ impl super::SigningKey for SecretKey {
   /// Sign data
   fn sign(&self, data: &[u8]) -> HttpSigResult<Vec<u8>> {
     match &self {
+      #[cfg(feature = "ecdsa-p256-sha256-signature")]
       Self::EcdsaP256Sha256(sk) => {
         debug!("Sign EcdsaP256Sha256");
         let sk = ecdsa::SigningKey::from(sk);
-        let mut digest = <Sha256 as Digest>::new();
+        let mut digest = <sha2::Sha256 as sha2::Digest>::new();
         digest.update(data);
         let sig: ecdsa::Signature<NistP256> = sk.sign_digest(digest);
         Ok(sig.to_bytes().to_vec())
       }
+      #[cfg(feature = "ecdsa-p384-sha384-signature")]
       Self::EcdsaP384Sha384(sk) => {
         debug!("Sign EcdsaP384Sha384");
         let sk = ecdsa::SigningKey::from(sk);
-        let mut digest = <Sha384 as Digest>::new();
+        let mut digest = <sha2::Sha384 as sha2::Digest>::new();
         digest.update(data);
         let sig: ecdsa::Signature<NistP384> = sk.sign_digest(digest);
         Ok(sig.to_bytes().to_vec())
@@ -245,6 +297,7 @@ impl super::SigningKey for SecretKey {
     }
   }
 
+  #[cfg(feature = "key-id")]
   fn key_id(&self) -> String {
     use super::VerifyingKey;
     self.public_key().key_id()
@@ -261,6 +314,7 @@ impl super::VerifyingKey for SecretKey {
     self.public_key().verify(data, signature)
   }
 
+  #[cfg(feature = "key-id")]
   fn key_id(&self) -> String {
     self.public_key().key_id()
   }
@@ -275,8 +329,10 @@ impl super::VerifyingKey for SecretKey {
 /// Public key for http signature, only for asymmetric algorithm
 /// Name conventions follow [Section 6.2.2, RFC9421](https://datatracker.ietf.org/doc/html/rfc9421#section-6.2.2)
 pub enum PublicKey {
+  #[cfg(feature = "ecdsa-p256-sha256-signature")]
   /// ecdsa-p256-sha256
   EcdsaP256Sha256(EcPublicKey<NistP256>),
+  #[cfg(feature = "ecdsa-p384-sha384-signature")]
   /// ecdsa-p384-sha384
   EcdsaP384Sha384(EcPublicKey<NistP384>),
   #[cfg(feature = "ed25519-signature")]
@@ -294,12 +350,14 @@ impl PublicKey {
   /// from plain bytes
   pub fn from_bytes(alg: &AlgorithmName, bytes: &[u8]) -> HttpSigResult<Self> {
     match alg {
+      #[cfg(feature = "ecdsa-p256-sha256-signature")]
       AlgorithmName::EcdsaP256Sha256 => {
         debug!("Read P256 public key");
         let pk = EcPublicKey::from_sec1_bytes(bytes)
           .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string().into()))?;
         Ok(Self::EcdsaP256Sha256(pk))
       }
+      #[cfg(feature = "ecdsa-p384-sha384-signature")]
       AlgorithmName::EcdsaP384Sha384 => {
         debug!("Read P384 public key");
         let pk = EcPublicKey::from_sec1_bytes(bytes)
@@ -313,6 +371,10 @@ impl PublicKey {
           .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string().into()))?;
         Ok(Self::Ed25519(pk))
       }
+      #[cfg(feature = "hmac-sha256-signature")]
+      AlgorithmName::HmacSha256 => Err(HttpSigError::ParsePrivateKeyError(
+        "Unsupported algorithm".into(),
+      )),
       #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaV1_5Sha256 => {
         debug!("Read RSA public key");
@@ -332,6 +394,7 @@ impl PublicKey {
     }
   }
 
+  #[cfg(feature = "pem")]
   #[allow(dead_code)]
   /// Convert from pem string
   pub fn from_pem(alg: &AlgorithmName, pem: &str) -> HttpSigResult<Self> {
@@ -341,11 +404,15 @@ impl PublicKey {
       return Err(HttpSigError::ParsePublicKeyError("Invalid tag".into()));
     };
 
-    let spki_ref = SubjectPublicKeyInfoRef::from_der(doc.as_bytes()).map_err(|e| {
+    let spki_ref = spki::SubjectPublicKeyInfoRef::from_der(doc.as_bytes()).map_err(|e| {
       HttpSigError::ParsePublicKeyError(format!("Error decoding SubjectPublicKeyInfo: {e}").into())
     })?;
 
     let pk_bytes = match spki_ref.algorithm.oid.to_string().as_ref() {
+      #[cfg(any(
+        feature = "ecdsa-p256-sha256-signature",
+        feature = "ecdsa-p384-sha384-signature"
+      ))]
       // ec
       algorithm_oids::EC => {
         let param = spki_ref
@@ -353,7 +420,9 @@ impl PublicKey {
           .parameters_oid()
           .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string().into()))?;
         let algorithm_name = match param.to_string().as_ref() {
+          #[cfg(feature = "ecdsa-p256-sha256-signature")]
           params_oids::Secp256r1 => AlgorithmName::EcdsaP256Sha256,
+          #[cfg(feature = "ecdsa-p384-sha384-signature")]
           params_oids::Secp384r1 => AlgorithmName::EcdsaP384Sha384,
           _ => {
             return Err(HttpSigError::ParsePublicKeyError(
@@ -422,22 +491,24 @@ impl super::VerifyingKey for PublicKey {
   /// Verify signature
   fn verify(&self, data: &[u8], signature: &[u8]) -> HttpSigResult<()> {
     match self {
+      #[cfg(feature = "ecdsa-p256-sha256-signature")]
       Self::EcdsaP256Sha256(pk) => {
         debug!("Verify EcdsaP256Sha256");
         let signature = ecdsa::Signature::<NistP256>::from_bytes(signature.into())
           .map_err(|e| HttpSigError::ParseSignatureError(e.to_string().into()))?;
         let vk = ecdsa::VerifyingKey::from(pk);
-        let mut digest = <Sha256 as Digest>::new();
+        let mut digest = <sha2::Sha256 as Digest>::new();
         digest.update(data);
         vk.verify_digest(digest, &signature)
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string().into()))
       }
+      #[cfg(feature = "ecdsa-p384-sha384-signature")]
       Self::EcdsaP384Sha384(pk) => {
         debug!("Verify EcdsaP384Sha384");
         let signature = ecdsa::Signature::<NistP384>::from_bytes(signature.into())
           .map_err(|e| HttpSigError::ParseSignatureError(e.to_string().into()))?;
         let vk = ecdsa::VerifyingKey::from(pk);
-        let mut digest = <Sha384 as Digest>::new();
+        let mut digest = <sha2::Sha384 as Digest>::new();
         digest.update(data);
         vk.verify_digest(digest, &signature)
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string().into()))
@@ -469,6 +540,7 @@ impl super::VerifyingKey for PublicKey {
     }
   }
 
+  #[cfg(feature = "key-id")]
   /// Create key id, created by SHA-256 hash of the public key bytes, then encoded in base64
   /// - For ECDSA keys, use the uncompressed SEC1 encoding of the public key point as the byte representation.
   /// - For Ed25519 keys, use the raw 32-byte public key.
@@ -477,7 +549,9 @@ impl super::VerifyingKey for PublicKey {
     use base64::{engine::general_purpose, Engine as _};
 
     let bytes = match self {
+      #[cfg(feature = "ecdsa-p256-sha256-signature")]
       Self::EcdsaP256Sha256(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
+      #[cfg(feature = "ecdsa-p384-sha384-signature")]
       Self::EcdsaP384Sha384(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
       #[cfg(feature = "ed25519-signature")]
       Self::Ed25519(vk) => vk.as_ref().to_vec(),
@@ -494,7 +568,7 @@ impl super::VerifyingKey for PublicKey {
         .map(|der| der.as_bytes().to_vec())
         .unwrap_or(b"rsa-der-serialization-failed".to_vec()),
     };
-    let mut hasher = <Sha256 as Digest>::new();
+    let mut hasher = <sha2::Sha256 as Digest>::new();
     hasher.update(&bytes);
     let hash = hasher.finalize();
     general_purpose::STANDARD.encode(hash)
@@ -503,7 +577,9 @@ impl super::VerifyingKey for PublicKey {
   /// Get the algorithm name
   fn alg(&self) -> AlgorithmName {
     match self {
+      #[cfg(feature = "ecdsa-p256-sha256-signature")]
       Self::EcdsaP256Sha256(_) => AlgorithmName::EcdsaP256Sha256,
+      #[cfg(feature = "ecdsa-p384-sha384-signature")]
       Self::EcdsaP384Sha384(_) => AlgorithmName::EcdsaP384Sha384,
       #[cfg(feature = "ed25519-signature")]
       Self::Ed25519(_) => AlgorithmName::Ed25519,
@@ -517,22 +593,26 @@ impl super::VerifyingKey for PublicKey {
 
 #[cfg(test)]
 mod tests {
+  #[cfg(feature = "ecdsa-p256-sha256-signature")]
   use p256::elliptic_curve::group::GroupEncoding;
 
   use super::*;
   use std::matches;
 
+  #[cfg(feature = "ecdsa-p256-sha256-signature")]
   const P256_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgv7zxW56ojrWwmSo1
 4uOdbVhUfj9Jd+5aZIB9u8gtWnihRANCAARGYsMe0CT6pIypwRvoJlLNs4+cTh2K
 L7fUNb5i6WbKxkpAoO+6T3pMBG5Yw7+8NuGTvvtrZAXduA2giPxQ8zCf
 -----END PRIVATE KEY-----
 "##;
+  #[cfg(feature = "ecdsa-p256-sha256-signature")]
   const P256_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAERmLDHtAk+qSMqcEb6CZSzbOPnE4d
 ii+31DW+YulmysZKQKDvuk96TARuWMO/vDbhk777a2QF3bgNoIj8UPMwnw==
 -----END PUBLIC KEY-----
 "##;
+  #[cfg(feature = "ecdsa-p384-sha384-signature")]
   const P384_SECRET_KEY: &str = r##"-----BEGIN PRIVATE KEY-----
 MIG2AgEAMBAGByqGSM49AgEGBSuBBAAiBIGeMIGbAgEBBDCPYbeLLlIQKUzVyVGH
 MeuFp/9o2Lr+4GrI3bsbHuViMMceiuM+8xqzFCSm4Ltl5UyhZANiAARKg3yM+Ltx
@@ -540,6 +620,7 @@ n4ZptF3hI6Q167crEtPRklCEsRTyWUqy+VrrnM5LU/+fqxVbyniBZHd4vmQVYtjF
 xsv8P3DpjvpKJZqFfVdIr2ZR+kYDKHwIruIF9fCPawAH2tnbuc3xEzQ=
 -----END PRIVATE KEY-----
 "##;
+  #[cfg(feature = "ecdsa-p384-sha384-signature")]
   const P384_PUBLIC_KEY: &str = r##"-----BEGIN PUBLIC KEY-----
 MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAESoN8jPi7cZ+GabRd4SOkNeu3KxLT0ZJQ
 hLEU8llKsvla65zOS1P/n6sVW8p4gWR3eL5kFWLYxcbL/D9w6Y76SiWahX1XSK9m
@@ -612,31 +693,40 @@ tQIDAQAB
       assert!(matches!(pk, PublicKey::Ed25519(_)));
     }
 
-    let mut rng = rand_085::thread_rng();
-    let es256_sk = p256::ecdsa::SigningKey::random(&mut rng);
-    let es256_pk = es256_sk.verifying_key();
-    let sk = SecretKey::from_bytes(
-      &AlgorithmName::EcdsaP256Sha256,
-      es256_sk.to_bytes().as_ref(),
-    )
-    .unwrap();
-    assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
-    let pk_bytes = es256_pk.as_affine().to_bytes();
-    let pk = PublicKey::from_bytes(&AlgorithmName::EcdsaP256Sha256, pk_bytes.as_ref()).unwrap();
-    assert!(matches!(pk, PublicKey::EcdsaP256Sha256(_)));
+    #[cfg(feature = "ecdsa-p256-sha256-signature")]
+    {
+      let mut rng = rand_085::thread_rng();
+      let es256_sk = p256::ecdsa::SigningKey::random(&mut rng);
+      let es256_pk = es256_sk.verifying_key();
+      let sk = SecretKey::from_bytes(
+        &AlgorithmName::EcdsaP256Sha256,
+        es256_sk.to_bytes().as_ref(),
+      )
+      .unwrap();
+      assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
+      let pk_bytes = es256_pk.as_affine().to_bytes();
+      let pk = PublicKey::from_bytes(&AlgorithmName::EcdsaP256Sha256, pk_bytes.as_ref()).unwrap();
+      assert!(matches!(pk, PublicKey::EcdsaP256Sha256(_)));
+    }
   }
 
   #[test]
   fn test_from_pem() {
-    let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
-    assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
-    let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY).unwrap();
-    assert!(matches!(pk, PublicKey::EcdsaP256Sha256(_)));
+    #[cfg(feature = "ecdsa-p256-sha256-signature")]
+    {
+      let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
+      assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));
+      let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY).unwrap();
+      assert!(matches!(pk, PublicKey::EcdsaP256Sha256(_)));
+    }
 
-    let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_SECRET_KEY).unwrap();
-    assert!(matches!(sk, SecretKey::EcdsaP384Sha384(_)));
-    let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_PUBLIC_KEY).unwrap();
-    assert!(matches!(pk, PublicKey::EcdsaP384Sha384(_)));
+    #[cfg(feature = "ecdsa-p384-sha384-signature")]
+    {
+      let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_SECRET_KEY).unwrap();
+      assert!(matches!(sk, SecretKey::EcdsaP384Sha384(_)));
+      let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_PUBLIC_KEY).unwrap();
+      assert!(matches!(pk, PublicKey::EcdsaP384Sha384(_)));
+    }
 
     #[cfg(feature = "ed25519-signature")]
     {
@@ -664,19 +754,25 @@ tQIDAQAB
   #[test]
   fn test_sign_verify() {
     use super::super::{SigningKey, VerifyingKey};
-    let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
-    let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY).unwrap();
-    let data = b"hello world";
-    let signature = sk.sign(data).unwrap();
-    pk.verify(data, &signature).unwrap();
-    assert!(pk.verify(b"hello", &signature).is_err());
+    #[cfg(feature = "ecdsa-p256-sha256-signature")]
+    {
+      let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY).unwrap();
+      let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY).unwrap();
+      let data = b"hello world";
+      let signature = sk.sign(data).unwrap();
+      pk.verify(data, &signature).unwrap();
+      assert!(pk.verify(b"hello", &signature).is_err());
+    }
 
-    let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_SECRET_KEY).unwrap();
-    let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_PUBLIC_KEY).unwrap();
-    let data = b"hello world";
-    let signature = sk.sign(data).unwrap();
-    pk.verify(data, &signature).unwrap();
-    assert!(pk.verify(b"hello", &signature).is_err());
+    #[cfg(feature = "ecdsa-p384-sha384-signature")]
+    {
+      let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_SECRET_KEY).unwrap();
+      let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_PUBLIC_KEY).unwrap();
+      let data = b"hello world";
+      let signature = sk.sign(data).unwrap();
+      pk.verify(data, &signature).unwrap();
+      assert!(pk.verify(b"hello", &signature).is_err());
+    }
 
     #[cfg(feature = "ed25519-signature")]
     {
@@ -711,15 +807,21 @@ tQIDAQAB
   #[test]
   fn test_kid() -> HttpSigResult<()> {
     use super::super::VerifyingKey;
-    let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY)?;
-    let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY)?;
-    assert_eq!(sk.public_key().key_id(), pk.key_id());
-    assert_eq!(pk.key_id(), "k34r3Nqfak67bhJSXTjTRo5tCIr1Bsre1cPoJ3LJ9xE=");
+    #[cfg(feature = "ecdsa-p256-sha256-signature")]
+    {
+      let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_SECRET_KEY)?;
+      let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP256Sha256, P256_PUBLIC_KEY)?;
+      assert_eq!(sk.public_key().key_id(), pk.key_id());
+      assert_eq!(pk.key_id(), "k34r3Nqfak67bhJSXTjTRo5tCIr1Bsre1cPoJ3LJ9xE=");
+    }
 
-    let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_SECRET_KEY)?;
-    let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_PUBLIC_KEY)?;
-    assert_eq!(sk.public_key().key_id(), pk.key_id());
-    assert_eq!(pk.key_id(), "JluSJKLaQsbGcgg1Ves4FfP/Kf7qS11RT88TvU0eNSo=");
+    #[cfg(feature = "ecdsa-p384-sha384-signature")]
+    {
+      let sk = SecretKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_SECRET_KEY)?;
+      let pk = PublicKey::from_pem(&AlgorithmName::EcdsaP384Sha384, P384_PUBLIC_KEY)?;
+      assert_eq!(sk.public_key().key_id(), pk.key_id());
+      assert_eq!(pk.key_id(), "JluSJKLaQsbGcgg1Ves4FfP/Kf7qS11RT88TvU0eNSo=");
+    }
 
     #[cfg(feature = "ed25519-signature")]
     {

@@ -91,7 +91,10 @@ impl HttpSignatureParams {
 
   /// Set `keyid` and `alg` from the signing key
   pub fn set_key_info(&mut self, key: &impl SigningKey) -> &mut Self {
-    self.keyid = Some(key.key_id().to_string());
+    #[cfg(feature = "key-id")]
+    {
+      self.keyid = Some(key.key_id().to_string());
+    }
     self.alg = Some(key.alg().to_string());
     self
   }
