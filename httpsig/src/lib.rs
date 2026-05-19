@@ -32,7 +32,7 @@ pub mod prelude {
 }
 
 /* ----------------------------------------------------------------- */
-#[cfg(test)]
+#[cfg(all(test, feature = "ed25519-signature"))]
 mod tests {
   use super::prelude::*;
   use base64::{engine::general_purpose, Engine as _};

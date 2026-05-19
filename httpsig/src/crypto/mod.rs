@@ -12,6 +12,7 @@ pub enum AlgorithmName {
   HmacSha256,
   EcdsaP256Sha256,
   EcdsaP384Sha384,
+  #[cfg(feature = "ed25519-signature")]
   Ed25519,
   #[cfg(feature = "rsa-signature")]
   RsaV1_5Sha256,
@@ -25,6 +26,7 @@ impl AlgorithmName {
       AlgorithmName::HmacSha256 => "hmac-sha256",
       AlgorithmName::EcdsaP256Sha256 => "ecdsa-p256-sha256",
       AlgorithmName::EcdsaP384Sha384 => "ecdsa-p384-sha384",
+      #[cfg(feature = "ed25519-signature")]
       AlgorithmName::Ed25519 => "ed25519",
       #[cfg(feature = "rsa-signature")]
       AlgorithmName::RsaV1_5Sha256 => "rsa-v1_5-sha256",
@@ -48,6 +50,7 @@ impl core::str::FromStr for AlgorithmName {
       "hmac-sha256" => Ok(Self::HmacSha256),
       "ecdsa-p256-sha256" => Ok(Self::EcdsaP256Sha256),
       "ecdsa-p384-sha384" => Ok(Self::EcdsaP384Sha384),
+      #[cfg(feature = "ed25519-signature")]
       "ed25519" => Ok(Self::Ed25519),
       #[cfg(feature = "rsa-signature")]
       "rsa-v1_5-sha256" => Ok(Self::RsaV1_5Sha256),

@@ -16,6 +16,7 @@ rust-version.workspace = true
 default = ["blocking", "digest-sha256", "digest-sha512"]
 digest-sha256 = []
 digest-sha512 = []
+ed25519-signature = ["httpsig/ed25519-signature"]
 blocking = ["futures/executor"]
 rsa-signature = ["httpsig/rsa-signature"]
 
@@ -47,6 +48,10 @@ bytes = { version = "1.11.1" }
 
 
 [dev-dependencies]
+httpsig-hyper = { path = ".", features = [
+  "digest-sha256",
+  "ed25519-signature",
+] }
 tokio = { version = "1.49.0", default-features = false, features = [
   "macros",
   "rt-multi-thread",
@@ -54,9 +59,9 @@ tokio = { version = "1.49.0", default-features = false, features = [
 
 [[example]]
 name = "hyper-response"
-required-features = ["digest-sha256"]
+required-features = ["digest-sha256", "ed25519-signature"]
 
 
 [[example]]
 name = "hyper-request"
-required-features = ["digest-sha256"]
+required-features = ["digest-sha256", "ed25519-signature"]

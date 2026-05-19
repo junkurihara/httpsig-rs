@@ -1049,6 +1049,6 @@ fn extract_http_message_component<M: HttpMessage>(
 }
 
 /* --------------------------------------- */
-#[cfg(all(test, feature = "digest-sha256"))]
+#[cfg(test)]
 #[path = "hyper_http_tests.rs"]
 mod tests;
