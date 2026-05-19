@@ -107,9 +107,6 @@ impl SecretKey {
           pss::SigningKey::<rsa::sha2::Sha512>::new(sk),
         ))
       }
-      _ => Err(HttpSigError::ParsePrivateKeyError(
-        "Unsupported algorithm".into(),
-      )),
     }
   }
   /// parse der
@@ -332,9 +329,6 @@ impl PublicKey {
           .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string().into()))?;
         Ok(Self::RsaPssSha512(pss::VerifyingKey::new(pk)))
       }
-      _ => Err(HttpSigError::ParsePublicKeyError(
-        "Unsupported algorithm".into(),
-      )),
     }
   }
 
