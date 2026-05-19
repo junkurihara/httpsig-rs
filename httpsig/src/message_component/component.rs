@@ -171,21 +171,17 @@ pub(super) fn build_http_field_component(
         field_values = handle_params_key_into(field_values.as_ref(), key)?;
       }
       HttpMessageComponentParam::Bs => {
-        return Err(HttpSigError::NotYetImplemented(
-          "`bs` is not supported yet".to_string(),
-        ));
+        return Err(HttpSigError::NotYetImplemented("`bs` is not supported yet"));
       }
       HttpMessageComponentParam::Req => {
         debug!("`req` is given for http field component");
       }
       HttpMessageComponentParam::Tr => {
-        return Err(HttpSigError::NotYetImplemented(
-          "`tr` is not supported yet".to_string(),
-        ))
+        return Err(HttpSigError::NotYetImplemented("`tr` is not supported yet"))
       }
       HttpMessageComponentParam::Name(_) => {
         return Err(HttpSigError::NotYetImplemented(
-          "`name` is only for derived component query-params".to_string(),
+          "`name` is only for derived component query-params",
         ));
       }
     }

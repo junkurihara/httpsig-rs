@@ -161,7 +161,7 @@ impl HttpSignatureBase {
     // check if the order of component lines is the same as the order of covered message component ids
     if component_lines.len() != signature_params.covered_components.len() {
       return Err(HttpSigError::BuildSignatureBaseError(
-        "The number of component lines is not the same as the number of covered message component ids".to_string(),
+        "The number of component lines is not the same as the number of covered message component ids",
       ));
     }
 
@@ -171,7 +171,7 @@ impl HttpSignatureBase {
       .all(|(component_line, covered_component_id)| component_line.id == *covered_component_id);
     if !assertion {
       return Err(HttpSigError::BuildSignatureBaseError(
-        "The order of component lines is not the same as the order of covered message component ids".to_string(),
+        "The order of component lines is not the same as the order of covered message component ids",
       ));
     }
 
@@ -216,7 +216,7 @@ impl HttpSignatureBase {
   ) -> HttpSigResult<()> {
     if signature_headers.signature_params().is_expired() {
       return Err(HttpSigError::ExpiredSignatureParams(
-        "Signature params is expired".to_string(),
+        "Signature params is expired",
       ));
     }
     let signature_bytes = signature_headers.signature.0.as_slice();

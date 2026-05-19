@@ -27,13 +27,13 @@ pub enum HyperSigError {
 
   /// Invalid component param
   #[error("Invalid component param: {0}")]
-  InvalidComponentParam(String),
+  InvalidComponentParam(Cow<'static, str>),
 
   /// Invalid signature
   #[error("Invalid signature: {0}")]
   InvalidSignature(&'static str),
 
-  /// Inherited from HttpSigError
+  /// Inherited from [`HttpSigError`].
   #[error("HttpSigError: {0}")]
   HttpSigError(#[from] HttpSigError),
 }

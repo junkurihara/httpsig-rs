@@ -66,7 +66,7 @@ impl super::VerifyingKey for SharedKey {
         mac.update(data);
         mac
           .verify_slice(expected_mac)
-          .map_err(|_| HttpSigError::InvalidSignature("Invalid MAC".to_string()))
+          .map_err(|_| HttpSigError::InvalidSignature("Invalid MAC".into()))
       }
     }
   }

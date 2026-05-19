@@ -10,7 +10,7 @@ use httpsig::prelude::{
   HttpSignatureParams, SigningKey, VerifyingKey,
 };
 use indexmap::{IndexMap, IndexSet};
-use std::{future::Future, str::FromStr};
+use std::{borrow::Cow, future::Future, str::FromStr};
 
 /// A type alias for the signature name
 type SignatureName = String;
@@ -833,7 +833,7 @@ impl<B> HttpMessage for Response<B> {
       // `@status` must not have `req` parameter
       if matches!(derived_name, DerivedComponentName::Status) {
         Err(HyperSigError::InvalidComponentParam(
-          "`@status` does not accept `req` parameter".to_string(),
+          "`@status` does not accept `req` parameter".into(),
         ))
       } else {
         Ok(())
@@ -957,17 +957,20 @@ fn extract_derived_component<M: HttpMessage>(
       Ok(())
     }
     HttpMessageComponentParam::Name(_) => Err(HyperSigError::InvalidComponentParam(
-      "`name` parameter is only allowed for `@query-param`".to_string(),
+      "`name` parameter is only allowed for `@query-param`".into(),
     )),
     // `req` is only meaningful in response signatures (RFC 9421 §2.4).
     // `build_signature_base` already validates this and re-dispatches extraction against the
     // original request, so `req_or_res` here should always be `Request`.
     // Guard against misuse by callers that bypass `build_signature_base`.
     HttpMessageComponentParam::Req => req_or_res.on_message_derived_component_req_param(),
-    _ => Err(HyperSigError::InvalidComponentParam(format!(
-      "parameter `{}` is not allowed on derived components",
-      String::from(param.clone())
-    ))),
+    _ => Err(HyperSigError::InvalidComponentParam(
+      format!(
+        "parameter `{}` is not allowed on derived components",
+        Cow::from(param)
+      )
+      .into(),
+    )),
   })?;
 
   req_or_res.on_message_derived_component(derived_name, id)?;
