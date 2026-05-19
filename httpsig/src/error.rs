@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use thiserror::Error;
 
 /// Result type for http signature
@@ -38,16 +40,16 @@ pub enum HttpSigError {
   InvalidComponentId(String),
   /// Invalid http message component
   #[error("Invalid http message component: {0}")]
-  InvalidComponent(String),
+  InvalidComponent(Cow<'static, str>),
 
   /* ----- Signature params errors ----- */
   /// Invalid signature params
   #[error("Invalid signature params: {0}")]
-  InvalidSignatureParams(String),
+  InvalidSignatureParams(&'static str),
 
   /// Error in building signature header
   #[error("Failed to build signature header: {0}")]
-  BuildSignatureHeaderError(String),
+  BuildSignatureHeaderError(&'static str),
 
   /// Error in building signature base
   #[error("Failed to build signature base: {0}")]

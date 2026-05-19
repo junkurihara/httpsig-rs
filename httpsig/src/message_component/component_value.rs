@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Http message component value
@@ -6,18 +8,18 @@ pub struct HttpMessageComponentValue {
   inner: HttpMessageComponentValueInner,
 }
 
-impl From<&str> for HttpMessageComponentValue {
-  fn from(val: &str) -> Self {
+impl From<String> for HttpMessageComponentValue {
+  fn from(val: String) -> Self {
     Self {
-      inner: HttpMessageComponentValueInner::String(val.to_string()),
+      inner: HttpMessageComponentValueInner::String(val),
     }
   }
 }
 
-impl From<(&str, &str)> for HttpMessageComponentValue {
-  fn from((key, val): (&str, &str)) -> Self {
+impl From<(String, String)> for HttpMessageComponentValue {
+  fn from((key, val): (String, String)) -> Self {
     Self {
-      inner: HttpMessageComponentValueInner::KeyValue((key.to_string(), val.to_string())),
+      inner: HttpMessageComponentValueInner::KeyValue((key, val)),
     }
   }
 }
@@ -55,10 +57,10 @@ impl HttpMessageComponentValue {
     }
   }
   /// Get key value connected with `=`, or just value
-  pub fn as_field_value(&self) -> String {
+  pub fn to_field_value(&self) -> Cow<'_, str> {
     match &self.inner {
-      HttpMessageComponentValueInner::String(val) => val.to_owned(),
-      HttpMessageComponentValueInner::KeyValue((key, val)) => format!("{}={}", key, val),
+      HttpMessageComponentValueInner::String(val) => val.into(),
+      HttpMessageComponentValueInner::KeyValue((key, val)) => format!("{}={}", key, val).into(),
     }
   }
   /// Get value only
