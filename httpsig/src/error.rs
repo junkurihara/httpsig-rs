@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use compact_str::CompactString;
 use thiserror::Error;
 
 /// Result type for http signature
@@ -28,16 +29,16 @@ pub enum HttpSigError {
   /* ----- Component errors ----- */
   /// Failed to parse structured field value
   #[error("Failed to parse structured field value: {0}")]
-  ParseSFVError(String),
+  ParseSFVError(#[from] sfv::Error),
   /// Invalid http message component name
   #[error("Invalid http message component name: {0}")]
-  InvalidComponentName(String),
+  InvalidComponentName(CompactString),
   /// Invalid http message component param
   #[error("Invalid http message component param: {0}")]
-  InvalidComponentParam(String),
+  InvalidComponentParam(Cow<'static, str>),
   /// Invalid http message component id
   #[error("Invalid http message component id: {0}")]
-  InvalidComponentId(String),
+  InvalidComponentId(CompactString),
   /// Invalid http message component
   #[error("Invalid http message component: {0}")]
   InvalidComponent(Cow<'static, str>),
@@ -45,7 +46,7 @@ pub enum HttpSigError {
   /* ----- Signature params errors ----- */
   /// Invalid signature params
   #[error("Invalid signature params: {0}")]
-  InvalidSignatureParams(&'static str),
+  InvalidSignatureParams(Cow<'static, str>),
 
   /// Error in building signature header
   #[error("Failed to build signature header: {0}")]
@@ -61,7 +62,7 @@ pub enum HttpSigError {
 
   /// Invalid algorithm name
   #[error("Invalid algorithm name: {0}")]
-  InvalidAlgorithmName(String),
+  InvalidAlgorithmName(CompactString),
 
   /* ----- Other errors ----- */
   /// NotYetImplemented

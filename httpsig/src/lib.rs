@@ -142,8 +142,8 @@ Signature: sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgw
     let sk = SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap();
     let pk = PublicKey::from_pem(&AlgorithmName::Ed25519, EDDSA_PUBLIC_KEY).unwrap();
 
-    let signature_bytes = sk.sign(&signature_base.as_bytes()).unwrap();
-    let verification_result = pk.verify(&signature_base.as_bytes(), &signature_bytes);
+    let signature_bytes = sk.sign(&signature_base.to_vec()).unwrap();
+    let verification_result = pk.verify(&signature_base.to_vec(), &signature_bytes);
     assert!(verification_result.is_ok());
   }
 

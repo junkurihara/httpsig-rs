@@ -1,3 +1,12 @@
+use std::fmt::{self, Display, Write as _};
+use std::io::Write as _;
+
+use base64::{engine::general_purpose, Engine as _};
+use compact_str::{CompactString, ToCompactString};
+use indexmap::IndexMap;
+use rustc_hash::FxBuildHasher;
+use sfv::{BareItem, Item, ListEntry, Parser};
+
 use crate::{
   crypto::SigningKey,
   error::{HttpSigError, HttpSigResult},
@@ -5,13 +14,9 @@ use crate::{
   prelude::{message_component::HttpMessageComponentId, VerifyingKey},
   signature_params::HttpSignatureParams,
 };
-use base64::{engine::general_purpose, Engine as _};
-use indexmap::IndexMap;
-use rustc_hash::FxBuildHasher;
-use sfv::{BareItem, Item, ListEntry, Parser};
 
 /// IndexMap of signature name and HttpSignatureHeaders
-pub type HttpSignatureHeadersMap = IndexMap<String, HttpSignatureHeaders, FxBuildHasher>;
+pub type HttpSignatureHeadersMap = IndexMap<CompactString, HttpSignatureHeaders, FxBuildHasher>;
 
 /// Default signature name used to indicate signature in http header (`signature` and `signature-input`)
 const DEFAULT_SIGNATURE_NAME: &str = "sig";
@@ -20,7 +25,7 @@ const DEFAULT_SIGNATURE_NAME: &str = "sig";
 /// Signature Headers derived from HttpSignatureBase
 pub struct HttpSignatureHeaders {
   /// signature name coupling signature with signature input
-  signature_name: String,
+  signature_name: CompactString,
   /// Signature value of "Signature" http header in the form of "<signature_name>=:<base64_signature>:"
   signature: HttpSignature,
   /// signature-params value of "Signature-Input" http header in the form of "<signature_name>=:<signature_params>:"
@@ -33,12 +38,8 @@ impl HttpSignatureHeaders {
     signature_header: &str,
     signature_input_header: &str,
   ) -> HttpSigResult<HttpSignatureHeadersMap> {
-    let signature_input: sfv::Dictionary = Parser::new(signature_input_header)
-      .parse()
-      .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
-    let mut signature: sfv::Dictionary = Parser::new(signature_header)
-      .parse()
-      .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    let signature_input: sfv::Dictionary = Parser::new(signature_input_header).parse()?;
+    let mut signature: sfv::Dictionary = Parser::new(signature_header).parse()?;
     // let signature_input =
     //   Parser::parse_dictionary(signature_input_header.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
     // let signature =
@@ -80,7 +81,7 @@ impl HttpSignatureHeaders {
     let res = signature_input
       .iter()
       .map(|(k, v)| {
-        let signature_name = k.to_string();
+        let signature_name = k.as_str().to_compact_string();
         let signature_params = HttpSignatureParams::try_from(v)?;
 
         let signature_bytes = match signature.swap_remove(k) {
@@ -99,7 +100,7 @@ impl HttpSignatureHeaders {
             signature,
             signature_params,
           },
-        )) as HttpSigResult<(String, Self)>
+        )) as HttpSigResult<(CompactString, Self)>
       })
       .collect::<Result<HttpSignatureHeadersMap, _>>()?;
     Ok(res)
@@ -122,19 +123,26 @@ impl HttpSignatureHeaders {
 
   /// Returns the signature value of "Signature" http header in the form of "<signature_name>=:<base64_signature>:"
   pub fn signature_header_value(&self) -> String {
-    format!("{}=:{}:", self.signature_name, self.signature)
+    const NON_RSA_SIGNATURE_BUFFER_SIZE: usize = 128;
+    let mut buf = String::with_capacity(NON_RSA_SIGNATURE_BUFFER_SIZE);
+    write!(buf, "{}=:{}:", self.signature_name, self.signature).expect("no allocation error");
+    buf
   }
   /// Returns the signature input value of "Signature-Input" http header in the form of "<signature_name>=<signature_params>"
   pub fn signature_input_header_value(&self) -> String {
-    format!("{}={}", self.signature_name, self.signature_params)
+    const TYPICAL_SIGNATURE_INPUT_BUFFER_SIZE: usize = 256;
+    let mut buf = String::with_capacity(TYPICAL_SIGNATURE_INPUT_BUFFER_SIZE);
+    write!(buf, "{}={}", self.signature_name, self.signature_params).expect("no allocation error");
+    buf
   }
 }
 
 #[derive(Debug, Clone)]
 /// Wrapper struct of raw signature bytes
 pub struct HttpSignature(Vec<u8>);
-impl std::fmt::Display for HttpSignature {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+
+impl Display for HttpSignature {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     let signature_value = general_purpose::STANDARD.encode(&self.0);
     write!(f, "{}", signature_value)
   }
@@ -182,15 +190,17 @@ impl HttpSignatureBase {
     })
   }
 
-  /// Returns the signature base string as bytes to be signed
-  pub fn as_bytes(&self) -> Vec<u8> {
-    let string = self.to_string();
-    string.as_bytes().to_vec()
+  /// Returns the signature base string as vector of bytes to be signed.
+  pub fn to_vec(&self) -> Vec<u8> {
+    const TYPICAL_SIGNATURE_BASE_UPPER_BOUND_SIZE: usize = 512;
+    let mut buf = Vec::with_capacity(TYPICAL_SIGNATURE_BASE_UPPER_BOUND_SIZE);
+    write!(buf, "{}", self).expect("no allocation error");
+    buf
   }
 
   /// Build signature from given signing key
   pub fn build_raw_signature(&self, signing_key: &impl SigningKey) -> HttpSigResult<Vec<u8>> {
-    let bytes = self.as_bytes();
+    let bytes = self.to_vec();
     signing_key.sign(&bytes)
   }
 
@@ -202,7 +212,9 @@ impl HttpSignatureBase {
   ) -> HttpSigResult<HttpSignatureHeaders> {
     let signature = self.build_raw_signature(signing_key)?;
     Ok(HttpSignatureHeaders {
-      signature_name: signature_name.unwrap_or(DEFAULT_SIGNATURE_NAME).to_string(),
+      signature_name: signature_name
+        .unwrap_or(DEFAULT_SIGNATURE_NAME)
+        .to_compact_string(),
       signature: HttpSignature(signature),
       signature_params: self.signature_params.clone(),
     })
@@ -220,7 +232,7 @@ impl HttpSignatureBase {
       ));
     }
     let signature_bytes = signature_headers.signature.0.as_slice();
-    verifying_key.verify(&self.as_bytes(), signature_bytes)
+    verifying_key.verify(&self.to_vec(), signature_bytes)
   }
 
   /// Get key id from signature params
@@ -244,15 +256,14 @@ impl HttpSignatureBase {
   }
 }
 
-impl std::fmt::Display for HttpSignatureBase {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let mut signature_base = String::new();
-    for component_line in &self.component_lines {
-      signature_base.push_str(&component_line.to_string());
-      signature_base.push('\n');
+impl Display for HttpSignatureBase {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    for component in &self.component_lines {
+      // writeln appends `\n` on all platforms
+      writeln!(f, "{}", component)?;
     }
-    signature_base.push_str(&format!("\"@signature-params\": {}", self.signature_params));
-    write!(f, "{}", signature_base)
+    // no final newline according to the [Signature Base algorithm](https://www.rfc-editor.org/rfc/rfc9421#section-2.5)
+    write!(f, "\"@signature-params\": {}", self.signature_params)
   }
 }
 

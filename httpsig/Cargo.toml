@@ -29,6 +29,7 @@ tracing = { version = "0.1.44" }
 rustc-hash = { version = "2.1.1" }
 indexmap = { version = "2.11.4" }
 rand = { version = "0.10" }
+compact_str = "0.9"
 
 # crypto
 pkcs8 = { version = "0.10.2", optional = true }

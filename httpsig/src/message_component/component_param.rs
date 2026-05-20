@@ -1,6 +1,7 @@
-use std::borrow::Cow;
+use std::fmt;
 
 use crate::error::{HttpSigError, HttpSigResult};
+use compact_str::{CompactString, ToCompactString};
 use sfv::{FieldType, Parser};
 
 type IndexSet<K> = indexmap::IndexSet<K, rustc_hash::FxBuildHasher>;
@@ -14,7 +15,7 @@ pub enum HttpMessageComponentParam {
   Sf,
   /// key: https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.2
   /// This will be encoded to `;key="..."` in the signature input
-  Key(String),
+  Key(CompactString),
   /// bs: https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.3
   Bs,
   // tr: https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.4
@@ -23,21 +24,20 @@ pub enum HttpMessageComponentParam {
   Req,
   // name: https://datatracker.ietf.org/doc/html/rfc9421#name-query-parameters
   /// This will be encoded to `;name="..."` in the signature input
-  Name(String),
+  Name(CompactString),
 }
 
-impl From<&HttpMessageComponentParam> for Cow<'static, str> {
-  fn from(val: &HttpMessageComponentParam) -> Self {
-    match val {
-      HttpMessageComponentParam::Sf => "sf".into(),
-      // join allocates String with exact required capacity without reallocations
-      HttpMessageComponentParam::Key(val) => ["key=\"", val.as_str(), "\""].join("").into(),
-      HttpMessageComponentParam::Bs => "bs".into(),
-      HttpMessageComponentParam::Tr => "tr".into(),
-      HttpMessageComponentParam::Req => "req".into(),
-      // join allocates String with exact required capacity without reallocations
-      HttpMessageComponentParam::Name(v) => ["name=\"", v.as_str(), "\""].join("").into(),
+impl fmt::Display for HttpMessageComponentParam {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      HttpMessageComponentParam::Sf => write!(f, "sf")?,
+      HttpMessageComponentParam::Key(key) => write!(f, "key=\"{key}\"")?,
+      HttpMessageComponentParam::Bs => write!(f, "bs")?,
+      HttpMessageComponentParam::Tr => write!(f, "tr")?,
+      HttpMessageComponentParam::Req => write!(f, "req")?,
+      HttpMessageComponentParam::Name(name) => write!(f, "name=\"{name}\"")?,
     }
+    Ok(())
   }
 }
 
@@ -51,19 +51,19 @@ impl TryFrom<(&str, &sfv::BareItem)> for HttpMessageComponentParam {
       "req" => Ok(Self::Req),
       "name" => {
         let name = val.as_string().ok_or(HttpSigError::InvalidComponentParam(
-          "Invalid http field param: name".to_string(),
+          "Invalid http field param: name".into(),
         ))?;
-        Ok(Self::Name(name.to_string()))
+        Ok(Self::Name(name.as_str().to_compact_string()))
       }
       "key" => {
         let key = val.as_string().ok_or(HttpSigError::InvalidComponentParam(
-          "Invalid http field param: key".to_string(),
+          "Invalid http field param: key".into(),
         ))?;
-        Ok(Self::Key(key.to_string()))
+        Ok(Self::Key(key.as_str().to_compact_string()))
       }
-      _ => Err(HttpSigError::InvalidComponentParam(format!(
-        "Invalid http field param: {key}"
-      ))),
+      _ => Err(HttpSigError::InvalidComponentParam(
+        format!("Invalid http field param: {key}").into(),
+      )),
     }
   }
 }
@@ -77,8 +77,8 @@ impl std::hash::Hash for HttpMessageComponentParams {
     let mut params = self
       .0
       .iter()
-      .map(Cow::from)
-      .collect::<Vec<Cow<'static, str>>>();
+      .map(|p| p.to_compact_string())
+      .collect::<Vec<CompactString>>();
     params.sort();
     params.hash(state);
   }
@@ -97,47 +97,40 @@ impl TryFrom<&sfv::Parameters> for HttpMessageComponentParams {
 impl std::fmt::Display for HttpMessageComponentParams {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     if !self.0.is_empty() {
-      write!(
-        f,
-        ";{}",
-        self
-          .0
-          .iter()
-          .map(Cow::from)
-          .collect::<Vec<Cow<'static, str>>>()
-          .join(";")
-      )
-    } else {
-      Ok(())
+      for param in self.0.iter() {
+        write!(f, ";{}", param)?;
+      }
     }
+    Ok(())
   }
 }
 
 /* ---------------------------------------------------------------- */
 /// Handle `sf` parameter
-pub(super) fn handle_params_sf(field_values: &mut [String]) -> HttpSigResult<()> {
+pub(super) fn handle_params_sf(field_values: &mut [CompactString]) -> HttpSigResult<()> {
   let parsed_list = field_values
     .iter()
     .map(|v| {
       if let Ok(list) = Parser::new(v).parse::<sfv::List>() {
         list
           .serialize()
-          .ok_or("Failed to serialize structured field value for sf")
+          .ok_or("Failed to parse structured field value: failed to serialize structured field value for sf")
       } else if let Ok(dict) = Parser::new(v).parse::<sfv::Dictionary>() {
         dict
           .serialize()
-          .ok_or("Failed to serialize structured field value for sf")
+          .ok_or("Failed to parse structured field value: failed to serialize structured field value for sf")
       } else {
-        Err("invalid structured field value for sf")
+        Err("Failed to parse structured field value: invalid structured field value for sf")
       }
     })
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| {
-      HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}"))
+      HttpSigError::InvalidComponentParam(e.into())
     })?;
 
   field_values.iter_mut().zip(parsed_list).for_each(|(v, p)| {
-    *v = p;
+    v.clear();
+    v.push_str(&p);
   });
 
   Ok(())
@@ -146,16 +139,18 @@ pub(super) fn handle_params_sf(field_values: &mut [String]) -> HttpSigResult<()>
 /* ---------------------------------------------------------------- */
 /// Handle `key` parameter, returns new field values
 pub(super) fn handle_params_key_into(
-  field_values: &[String],
+  field_values: &[CompactString],
   key: &str,
-) -> HttpSigResult<Vec<String>> {
+) -> HttpSigResult<Vec<CompactString>> {
   let dicts = field_values
     .iter()
     .map(|v| Parser::new(v.as_str()).parse() as Result<sfv::Dictionary, _>)
     // Parser::parse_dictionary(v.as_bytes()))
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| {
-      HttpSigError::InvalidComponentParam(format!("Failed to parse structured field value: {e}"))
+      HttpSigError::InvalidComponentParam(
+        format!("Failed to parse structured field value: {e}").into(),
+      )
     })?;
 
   let found_entries = dicts
@@ -164,12 +159,15 @@ pub(super) fn handle_params_key_into(
       dict.get(key).map(|v| {
         let sfvalue: sfv::List = vec![v.clone()];
         // sfvalue.serialize_value()
-        sfvalue.serialize()
+        sfvalue
+          .serialize()
+          .as_ref()
+          .map(ToCompactString::to_compact_string)
       })
     })
     .collect::<Option<Vec<_>>>()
     .ok_or_else(|| {
-      HttpSigError::InvalidComponentParam(format!("Failed to serialize structured field value"))
+      HttpSigError::InvalidComponentParam("Failed to serialize structured field value".into())
     })?;
 
   Ok(found_entries)

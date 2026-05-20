@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use compact_str::{CompactString, CompactStringExt};
 
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8,16 +8,16 @@ pub struct HttpMessageComponentValue {
   inner: HttpMessageComponentValueInner,
 }
 
-impl From<String> for HttpMessageComponentValue {
-  fn from(val: String) -> Self {
+impl From<CompactString> for HttpMessageComponentValue {
+  fn from(val: CompactString) -> Self {
     Self {
       inner: HttpMessageComponentValueInner::String(val),
     }
   }
 }
 
-impl From<(String, String)> for HttpMessageComponentValue {
-  fn from((key, val): (String, String)) -> Self {
+impl From<(CompactString, CompactString)> for HttpMessageComponentValue {
+  fn from((key, val): (CompactString, CompactString)) -> Self {
     Self {
       inner: HttpMessageComponentValueInner::KeyValue((key, val)),
     }
@@ -34,9 +34,9 @@ impl std::fmt::Display for HttpMessageComponentValue {
 /// Http message component value inner, simple string or key-value pair
 enum HttpMessageComponentValueInner {
   /// Simple string value
-  String(String),
+  String(CompactString),
   /// Key value pair, typically used for the value like `sig1=:xxxxx:` of signature-input
-  KeyValue((String, String)),
+  KeyValue((CompactString, CompactString)),
 }
 
 impl std::fmt::Display for HttpMessageComponentValueInner {
@@ -57,10 +57,10 @@ impl HttpMessageComponentValue {
     }
   }
   /// Get key value connected with `=`, or just value
-  pub fn to_field_value(&self) -> Cow<'_, str> {
+  pub fn to_field_value(&self) -> CompactString {
     match &self.inner {
-      HttpMessageComponentValueInner::String(val) => val.into(),
-      HttpMessageComponentValueInner::KeyValue((key, val)) => format!("{}={}", key, val).into(),
+      HttpMessageComponentValueInner::String(val) => val.clone(),
+      HttpMessageComponentValueInner::KeyValue((key, val)) => [key, "=", val].concat_compact(),
     }
   }
   /// Get value only

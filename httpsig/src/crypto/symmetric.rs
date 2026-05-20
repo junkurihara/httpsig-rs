@@ -4,6 +4,13 @@ use crate::{
   trace::*,
 };
 use base64::{engine::general_purpose, Engine as _};
+#[cfg(any(
+  feature = "ed25519-signature",
+  feature = "ecdsa-p256-sha256-signature",
+  feature = "ecdsa-p384-sha384-signature",
+  feature = "rsa-signature"
+))]
+use compact_str::ToCompactString;
 use hmac::{Hmac, Mac};
 
 type HmacSha256 = Hmac<sha2::Sha256>;
@@ -30,10 +37,7 @@ impl SharedKey {
         feature = "ecdsa-p384-sha384-signature",
         feature = "rsa-signature"
       ))]
-      _ => Err(HttpSigError::InvalidAlgorithmName(format!(
-        "Unsupported algorithm for SharedKey: {}",
-        alg
-      ))),
+      _ => Err(HttpSigError::InvalidAlgorithmName(alg.to_compact_string())),
     }
   }
 }

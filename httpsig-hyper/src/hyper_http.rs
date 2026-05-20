@@ -306,11 +306,11 @@ where
       let headers = base.build_signature_headers(*key, *name)?;
       self.headers_mut().append(
         "signature-input",
-        headers.signature_input_header_value().parse()?,
+        headers.signature_input_header_value().try_into()?,
       );
       self
         .headers_mut()
-        .append("signature", headers.signature_header_value().parse()?);
+        .append("signature", headers.signature_header_value().try_into()?);
     }
     Ok(())
   }

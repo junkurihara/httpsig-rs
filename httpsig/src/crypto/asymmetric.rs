@@ -153,10 +153,12 @@ impl SecretKey {
   /// parse der
   /// Derive secret key from der bytes
   pub fn from_der(alg: &AlgorithmName, der: &[u8]) -> HttpSigResult<Self> {
+    use compact_str::ToCompactString;
+
     let pki = PrivateKeyInfo::from_der(der)
       .map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string().into()))?;
 
-    let sk_bytes = match pki.algorithm.oid.to_string().as_ref() {
+    let sk_bytes = match pki.algorithm.oid.to_compact_string().as_ref() {
       #[cfg(any(
         feature = "ecdsa-p256-sha256-signature",
         feature = "ecdsa-p384-sha384-signature"
@@ -167,7 +169,7 @@ impl SecretKey {
           .algorithm
           .parameters_oid()
           .map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string().into()))?;
-        let algorithm_name = match param.to_string().as_ref() {
+        let algorithm_name = match param.to_compact_string().as_ref() {
           #[cfg(feature = "ecdsa-p256-sha256-signature")]
           params_oids::Secp256r1 => AlgorithmName::EcdsaP256Sha256,
           #[cfg(feature = "ecdsa-p384-sha384-signature")]
@@ -398,6 +400,8 @@ impl PublicKey {
   #[allow(dead_code)]
   /// Convert from pem string
   pub fn from_pem(alg: &AlgorithmName, pem: &str) -> HttpSigResult<Self> {
+    use compact_str::ToCompactString;
+
     let (tag, doc) = Document::from_pem(pem)
       .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string().into()))?;
     if tag != "PUBLIC KEY" {
@@ -408,7 +412,7 @@ impl PublicKey {
       HttpSigError::ParsePublicKeyError(format!("Error decoding SubjectPublicKeyInfo: {e}").into())
     })?;
 
-    let pk_bytes = match spki_ref.algorithm.oid.to_string().as_ref() {
+    let pk_bytes = match spki_ref.algorithm.oid.to_compact_string().as_ref() {
       #[cfg(any(
         feature = "ecdsa-p256-sha256-signature",
         feature = "ecdsa-p384-sha384-signature"
@@ -419,7 +423,7 @@ impl PublicKey {
           .algorithm
           .parameters_oid()
           .map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string().into()))?;
-        let algorithm_name = match param.to_string().as_ref() {
+        let algorithm_name = match param.to_compact_string().as_ref() {
           #[cfg(feature = "ecdsa-p256-sha256-signature")]
           params_oids::Secp256r1 => AlgorithmName::EcdsaP256Sha256,
           #[cfg(feature = "ecdsa-p384-sha384-signature")]

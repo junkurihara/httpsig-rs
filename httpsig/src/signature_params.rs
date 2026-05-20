@@ -6,8 +6,9 @@ use crate::{
   util::has_unique_elements,
 };
 use base64::{engine::general_purpose, Engine as _};
+use compact_str::{CompactString, ToCompactString};
 use rand::RngExt;
-use sfv::{FieldType, ListEntry, Parser};
+use sfv::{FieldType, InnerList, ListEntry, Parser};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_DURATION: u64 = 300;
@@ -22,13 +23,13 @@ pub struct HttpSignatureParams {
   /// signature expires unix timestamp.
   pub expires: Option<u64>,
   /// nonce
-  pub nonce: Option<String>,
+  pub nonce: Option<CompactString>,
   /// algorithm name
-  pub alg: Option<String>,
+  pub alg: Option<CompactString>,
   /// key id.
-  pub keyid: Option<String>,
+  pub keyid: Option<CompactString>,
   /// tag
-  pub tag: Option<String>,
+  pub tag: Option<CompactString>,
   /// covered component vector string: ordered message components, i.e., string of http_fields and derived_components
   pub covered_components: Vec<HttpMessageComponentId>,
 }
@@ -42,7 +43,7 @@ impl HttpSignatureParams {
       .as_secs();
     if !has_unique_elements(covered_components.iter()) {
       return Err(HttpSigError::InvalidSignatureParams(
-        "duplicate covered component ids",
+        "duplicate covered component ids".into(),
       ));
     }
 
@@ -67,25 +68,25 @@ impl HttpSignatureParams {
 
   /// Set `nonce`
   pub fn set_nonce(&mut self, nonce: &str) -> &mut Self {
-    self.nonce = Some(nonce.to_string());
+    self.nonce = Some(nonce.to_compact_string());
     self
   }
 
   /// Set `alg`
   pub fn set_alg(&mut self, alg: &AlgorithmName) -> &mut Self {
-    self.alg = Some(alg.to_string());
+    self.alg = Some(alg.to_compact_string());
     self
   }
 
   /// Set `keyid`
   pub fn set_keyid(&mut self, keyid: &str) -> &mut Self {
-    self.keyid = Some(keyid.to_string());
+    self.keyid = Some(keyid.to_compact_string());
     self
   }
 
   /// Set `tag`
   pub fn set_tag(&mut self, tag: &str) -> &mut Self {
-    self.tag = Some(tag.to_string());
+    self.tag = Some(tag.to_compact_string());
     self
   }
 
@@ -93,9 +94,9 @@ impl HttpSignatureParams {
   pub fn set_key_info(&mut self, key: &impl SigningKey) -> &mut Self {
     #[cfg(feature = "key-id")]
     {
-      self.keyid = Some(key.key_id().to_string());
+      self.keyid = Some(key.key_id().to_compact_string());
     }
-    self.alg = Some(key.alg().to_string());
+    self.alg = Some(key.alg().to_compact_string());
     self
   }
 
@@ -103,7 +104,17 @@ impl HttpSignatureParams {
   pub fn set_random_nonce(&mut self) -> &mut Self {
     let mut rng = rand::rng();
     let nonce = rng.random::<[u8; 32]>();
-    self.nonce = Some(general_purpose::STANDARD.encode(nonce));
+    // 32 bytes - 10 full 3-byte groups and 2 bytes, requiring zero padding till the full 11th group
+    // Each 3-byte group base64-encoded as 4 byte group.
+    const BUF_SIZE: usize = 11 * 4;
+    let mut buf = CompactString::with_capacity(BUF_SIZE);
+    // SAFETY: base64 encoding is valid UTF-8 encoding
+    unsafe {
+      general_purpose::STANDARD
+        .encode_slice(nonce, buf.as_bytes_mut())
+        .expect("fits in the buffer")
+    };
+    self.nonce = Some(buf);
     self
   }
 
@@ -132,52 +143,42 @@ impl HttpSignatureParams {
 
 impl std::fmt::Display for HttpSignatureParams {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let joined = self
-      .covered_components
-      .iter()
-      .fold("".to_string(), |acc, v| {
-        if acc.is_empty() {
-          v.to_string()
-        } else {
-          format!("{acc} {v}")
-        }
-      });
-    let mut s: String = format!("({})", joined);
-    if self.created.is_some() {
-      s.push_str(&format!(";created={}", self.created.unwrap()));
+    write!(f, "(")?;
+    let mut covered_components_iter = self.covered_components.iter();
+    if let Some(component_id) = covered_components_iter.next() {
+      write!(f, "{}", component_id)?;
     }
-    if self.expires.is_some() {
-      s.push_str(&format!(";expires={}", self.expires.unwrap()));
+    for component_id in covered_components_iter {
+      write!(f, " {}", component_id)?;
     }
-    if self.nonce.is_some() {
-      s.push_str(&format!(";nonce=\"{}\"", self.nonce.as_ref().unwrap()));
+    write!(f, ")")?;
+    if let Some(created) = self.created {
+      write!(f, ";created={}", created)?;
     }
-    if self.alg.is_some() {
-      s.push_str(&format!(";alg=\"{}\"", self.alg.as_ref().unwrap()));
+    if let Some(expires) = self.expires {
+      write!(f, ";expires={}", expires)?;
     }
-    if self.keyid.is_some() {
-      s.push_str(&format!(";keyid=\"{}\"", self.keyid.as_ref().unwrap()));
+    if let Some(nonce) = &self.nonce {
+      write!(f, ";nonce=\"{}\"", nonce)?;
     }
-    if self.tag.is_some() {
-      s.push_str(&format!(";tag=\"{}\"", self.tag.as_ref().unwrap()));
+    if let Some(alg) = &self.alg {
+      write!(f, ";alg=\"{}\"", alg)?;
     }
-    write!(f, "{}", s)
+    if let Some(key_id) = &self.keyid {
+      write!(f, ";keyid=\"{}\"", key_id)?;
+    }
+    if let Some(tag) = &self.tag {
+      write!(f, ";tag=\"{}\"", tag)?;
+    }
+    Ok(())
   }
 }
 
-impl TryFrom<&ListEntry> for HttpSignatureParams {
+impl TryFrom<&InnerList> for HttpSignatureParams {
   type Error = HttpSigError;
-  /// Convert from ListEntry to HttpSignatureParams
-  fn try_from(value: &ListEntry) -> HttpSigResult<Self> {
-    if !matches!(value, ListEntry::InnerList(_)) {
-      return Err(HttpSigError::InvalidSignatureParams(
-        "Invalid signature params",
-      ));
-    }
-    let inner_list_with_params = match value {
-      ListEntry::InnerList(v) => v,
-      _ => unreachable!(),
-    };
+
+  /// Convert from InnerList to HttpSignatureParams
+  fn try_from(inner_list_with_params: &InnerList) -> HttpSigResult<Self> {
     let covered_components = inner_list_with_params
       .items
       .iter()
@@ -191,7 +192,7 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
 
     if !has_unique_elements(covered_components.iter()) {
       return Err(HttpSigError::InvalidSignatureParams(
-        "duplicate covered component ids",
+        "duplicate covered component ids".into(),
       ));
     }
 
@@ -205,21 +206,61 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
       covered_components,
     };
 
-    inner_list_with_params
-      .params
-      .iter()
-      .for_each(|(key, bare_item)| match key.as_str() {
-        "created" => params.created = bare_item.as_integer().map(|v| v.try_into().unwrap()),
-        "expires" => params.expires = bare_item.as_integer().map(|v| v.try_into().unwrap()),
-        "nonce" => params.nonce = bare_item.as_string().map(|v| v.to_string()),
-        "alg" => params.alg = bare_item.as_string().map(|v| v.to_string()),
-        "keyid" => params.keyid = bare_item.as_string().map(|v| v.to_string()),
-        "tag" => params.tag = bare_item.as_string().map(|v| v.to_string()),
-        _ => {
-          error!("Ignore invalid signature parameter: {}", key)
+    for (key, bare_item) in inner_list_with_params.params.iter() {
+      match key.as_str() {
+        "created" => {
+          params.created = bare_item
+            .as_integer()
+            .map(|v| v.try_into())
+            .transpose()
+            .map_err(|e: sfv::Error| HttpSigError::InvalidSignatureParams(e.to_string().into()))?
         }
-      });
+        "expires" => {
+          params.expires = bare_item
+            .as_integer()
+            .map(|v| v.try_into())
+            .transpose()
+            .map_err(|e: sfv::Error| HttpSigError::InvalidSignatureParams(e.to_string().into()))?
+        }
+        "nonce" => {
+          params.nonce = bare_item
+            .as_string()
+            .map(|v| v.as_str().to_compact_string())
+        }
+        "alg" => {
+          params.alg = bare_item
+            .as_string()
+            .map(|v| v.as_str().to_compact_string())
+        }
+        "keyid" => {
+          params.keyid = bare_item
+            .as_string()
+            .map(|v| v.as_str().to_compact_string())
+        }
+        "tag" => {
+          params.tag = bare_item
+            .as_string()
+            .map(|v| v.as_str().to_compact_string())
+        }
+        _ => {
+          error!("Ignore unknown signature parameter: {}", key)
+        }
+      };
+    }
     Ok(params)
+  }
+}
+
+impl TryFrom<&ListEntry> for HttpSignatureParams {
+  type Error = HttpSigError;
+  /// Convert from ListEntry to HttpSignatureParams
+  fn try_from(list: &ListEntry) -> HttpSigResult<Self> {
+    let ListEntry::InnerList(inner_list_with_params) = list else {
+      return Err(HttpSigError::InvalidSignatureParams(
+        "an inner list is expected".into(),
+      ));
+    };
+    inner_list_with_params.try_into()
   }
 }
 
@@ -227,16 +268,18 @@ impl TryFrom<&str> for HttpSignatureParams {
   type Error = HttpSigError;
   /// Convert from string to HttpSignatureParams
   fn try_from(value: &str) -> HttpSigResult<Self> {
-    let sfv_parsed: sfv::List = Parser::new(value)
-      .parse()
-      .map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
+    let sfv_parsed: sfv::List = Parser::new(value).parse()?;
     // let sfv_parsed = Parser::parse_list(value.as_bytes()).map_err(|e| HttpSigError::ParseSFVError(e.to_string()))?;
-    if sfv_parsed.len() != 1 || !matches!(sfv_parsed[0], ListEntry::InnerList(_)) {
-      return Err(HttpSigError::InvalidSignatureParams(
-        "Invalid signature params",
-      ));
+    if let (1, Some(ListEntry::InnerList(single_list_param))) =
+      (sfv_parsed.len(), sfv_parsed.first())
+    {
+      single_list_param.try_into()
+    } else {
+      Err(HttpSigError::InvalidSignatureParams(
+        // multiple signatures per signature input header are handled on signature headers level
+        "a single inner list is expected".into(),
+      ))
     }
-    HttpSignatureParams::try_from(&sfv_parsed[0])
   }
 }
 
@@ -289,8 +332,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
   fn test_set_key_info() {
     let mut params = HttpSignatureParams::try_new(&build_covered_components()).unwrap();
     params.set_key_info(&SecretKey::from_pem(&AlgorithmName::Ed25519, EDDSA_SECRET_KEY).unwrap());
-    assert_eq!(params.keyid, Some(EDDSA_KEY_ID.to_string()));
-    assert_eq!(params.alg, Some("ed25519".to_string()));
+    assert_eq!(params.keyid, Some(EDDSA_KEY_ID.to_compact_string()));
+    assert_eq!(params.alg, Some("ed25519".to_compact_string()));
   }
 
   #[test]
@@ -343,8 +386,8 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
       assert_eq!(params.created, Some(1704972031));
       assert_eq!(params.expires, None);
       assert_eq!(params.nonce, None);
-      assert_eq!(params.alg, Some("ed25519".to_string()));
-      assert_eq!(params.keyid, Some(EDDSA_KEY_ID.to_string()));
+      assert_eq!(params.alg, Some("ed25519".to_compact_string()));
+      assert_eq!(params.keyid, Some(EDDSA_KEY_ID.to_compact_string()));
       assert_eq!(params.tag, None);
       let covered_components = covered
         .split(' ')

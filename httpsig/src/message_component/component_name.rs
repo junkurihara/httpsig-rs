@@ -1,4 +1,5 @@
 use crate::error::{HttpSigError, HttpSigResult};
+use compact_str::{format_compact, CompactString, ToCompactString};
 use sfv::BareItem;
 
 /* ---------------------------------------------------------------- */
@@ -6,7 +7,7 @@ use sfv::BareItem;
 /// Http message component identifier
 pub enum HttpMessageComponentName {
   /// Http field component, which is in the form of `<field_name>` without being wrapped by double quotations
-  HttpField(String),
+  HttpField(CompactString),
   /// Derived component
   Derived(DerivedComponentName),
 }
@@ -16,14 +17,15 @@ impl TryFrom<&BareItem> for HttpMessageComponentName {
   fn try_from(value: &BareItem) -> HttpSigResult<Self> {
     match value {
       BareItem::String(name) => {
-        if name.as_str().starts_with('@') {
-          Ok(Self::Derived(DerivedComponentName::from(name.as_str())))
+        let name_str = name.as_str();
+        if name_str.starts_with('@') {
+          Ok(Self::Derived(DerivedComponentName::from(name_str)))
         } else {
-          Ok(Self::HttpField(name.to_string()))
+          Ok(Self::HttpField(name_str.to_compact_string()))
         }
       }
-      _ => Err(HttpSigError::InvalidComponentName(format!(
-        "Invalid http message component name: {value:?}"
+      _ => Err(HttpSigError::InvalidComponentName(format_compact!(
+        "{value:?}"
       ))),
     }
   }
@@ -70,9 +72,9 @@ impl AsRef<str> for DerivedComponentName {
     }
   }
 }
-impl From<DerivedComponentName> for String {
+impl From<DerivedComponentName> for CompactString {
   fn from(val: DerivedComponentName) -> Self {
-    val.as_ref().to_string()
+    val.as_ref().to_compact_string()
   }
 }
 impl From<&str> for DerivedComponentName {
