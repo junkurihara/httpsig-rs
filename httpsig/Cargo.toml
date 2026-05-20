@@ -71,3 +71,9 @@ httpsig = { path = ".", features = [
   "key-id",
 ] }
 rand-085 = { package = "rand", version = "0.8.5" } # testing only
+criterion = "0.8"
+
+[[bench]]
+name = "noncrypto"
+harness = false
+required-features = ["ed25519-signature"]
