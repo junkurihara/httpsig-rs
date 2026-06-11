@@ -189,17 +189,33 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
     inner_list_with_params
       .params
       .iter()
-      .for_each(|(key, bare_item)| match key.as_str() {
-        "created" => params.created = bare_item.as_integer().map(|v| v.try_into().unwrap()),
-        "expires" => params.expires = bare_item.as_integer().map(|v| v.try_into().unwrap()),
-        "nonce" => params.nonce = bare_item.as_string().map(|v| v.to_string()),
-        "alg" => params.alg = bare_item.as_string().map(|v| v.to_string()),
-        "keyid" => params.keyid = bare_item.as_string().map(|v| v.to_string()),
-        "tag" => params.tag = bare_item.as_string().map(|v| v.to_string()),
-        _ => {
-          error!("Ignore invalid signature parameter: {}", key)
+      .try_for_each(|(key, bare_item)| -> Result<(), HttpSigError> {
+        match key.as_str() {
+          // `created`/`expires` are unix timestamps. They must be non-negative integers;.
+          "created" => {
+            params.created = bare_item
+              .as_integer()
+              .map(u64::try_from)
+              .transpose()
+              .map_err(|_| HttpSigError::InvalidSignatureParams("`created` must be a non-negative integer".to_string()))?;
+          }
+          "expires" => {
+            params.expires = bare_item
+              .as_integer()
+              .map(u64::try_from)
+              .transpose()
+              .map_err(|_| HttpSigError::InvalidSignatureParams("`expires` must be a non-negative integer".to_string()))?;
+          }
+          "nonce" => params.nonce = bare_item.as_string().map(|v| v.to_string()),
+          "alg" => params.alg = bare_item.as_string().map(|v| v.to_string()),
+          "keyid" => params.keyid = bare_item.as_string().map(|v| v.to_string()),
+          "tag" => params.tag = bare_item.as_string().map(|v| v.to_string()),
+          _ => {
+            error!("Ignore invalid signature parameter: {}", key)
+          }
         }
-      });
+        Ok(())
+      })?;
     Ok(params)
   }
 }

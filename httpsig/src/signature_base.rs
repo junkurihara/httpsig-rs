@@ -282,6 +282,38 @@ mod test {
     );
   }
 
+  /// A hostile `Signature-Input` carrying a negative `created`/`expires` timestamp is a legal
+  /// SFV integer but not a valid unix timestamp. This should not panic.
+  #[test]
+  fn try_parse_rejects_negative_timestamp_without_panic() {
+    const SIGNATURE: &str = r##"sig1=:AAAA:"##;
+
+    for hostile_input in [
+      r##"sig1=("date");created=-1;keyid="x""##,
+      r##"sig1=("date");expires=-1;keyid="x""##,
+    ] {
+      let res = HttpSignatureHeaders::try_parse(SIGNATURE, hostile_input);
+      assert!(
+        matches!(res, Err(HttpSigError::InvalidSignatureParams(_))),
+        "expected InvalidSignatureParams, got {res:?}"
+      );
+    }
+  }
+
+  /// A hostile `Signature-Input` naming an unknown `@`-prefixed derived component should
+  /// not panic.
+  #[test]
+  fn try_parse_rejects_unknown_derived_component_without_panic() {
+    const SIGNATURE: &str = r##"sig1=:AAAA:"##;
+    const HOSTILE_INPUT: &str = r##"sig1=("@bogus");keyid="x""##;
+
+    let res = HttpSignatureHeaders::try_parse(SIGNATURE, HOSTILE_INPUT);
+    assert!(
+      matches!(res, Err(HttpSigError::InvalidComponentName(_))),
+      "expected InvalidComponentName, got {res:?}"
+    );
+  }
+
   #[test]
   fn test_signature_values() {
     const SIGNATURE_INPUT: &str = r##"sig-b26=("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519", sig-b27=("date" "@method" "@path" "@authority" "content-type" "content-length");created=1618884473;keyid="test-key-ed25519-alt""##;
