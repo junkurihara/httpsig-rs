@@ -17,7 +17,7 @@ impl TryFrom<&BareItem> for HttpMessageComponentName {
     match value {
       BareItem::String(name) => {
         if name.as_str().starts_with('@') {
-          Ok(Self::Derived(DerivedComponentName::from(name.as_str())))
+          Ok(Self::Derived(DerivedComponentName::try_from(name.as_str())?))
         } else {
           Ok(Self::HttpField(name.to_string()))
         }
@@ -75,9 +75,10 @@ impl From<DerivedComponentName> for String {
     val.as_ref().to_string()
   }
 }
-impl From<&str> for DerivedComponentName {
-  fn from(val: &str) -> Self {
-    match val {
+impl TryFrom<&str> for DerivedComponentName {
+  type Error = HttpSigError;
+  fn try_from(val: &str) -> HttpSigResult<Self> {
+    let component = match val {
       "@method" => Self::Method,
       "@target-uri" => Self::TargetUri,
       "@authority" => Self::Authority,
@@ -88,8 +89,13 @@ impl From<&str> for DerivedComponentName {
       "@query-param" => Self::QueryParam,
       "@status" => Self::Status,
       "@signature-params" => Self::SignatureParams,
-      _ => panic!("Invalid derived component: {}", val),
-    }
+      _ => {
+        return Err(HttpSigError::InvalidComponentName(format!(
+          "Invalid derived component: {val}"
+        )));
+      }
+    };
+    Ok(component)
   }
 }
 
