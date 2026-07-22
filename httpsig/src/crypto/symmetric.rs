@@ -1,11 +1,10 @@
 use super::AlgorithmName;
-use crate::{
-  error::{HttpSigError, HttpSigResult},
-  trace::*,
-};
+use crate::error::{HttpSigError, HttpSigResult};
 use base64::{Engine as _, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
+#[cfg(feature = "tracing")]
+use tracing::debug;
 
 type HmacSha256 = Hmac<sha2::Sha256>;
 
@@ -21,6 +20,7 @@ pub enum SharedKey {
 impl SharedKey {
   /// Create a new shared key from base64 encoded string
   pub fn from_base64(alg: &AlgorithmName, key: &str) -> HttpSigResult<Self> {
+    #[cfg(feature = "tracing")]
     debug!("Create SharedKey from base64 string");
     let key = general_purpose::STANDARD.decode(key)?;
     match alg {
@@ -38,6 +38,7 @@ impl super::SigningKey for SharedKey {
   fn sign(&self, data: &[u8]) -> HttpSigResult<Vec<u8>> {
     match self {
       SharedKey::HmacSha256(key) => {
+        #[cfg(feature = "tracing")]
         debug!("Sign HmacSha256");
         let mut mac = HmacSha256::new_from_slice(key).unwrap();
         mac.update(data);
@@ -61,6 +62,7 @@ impl super::VerifyingKey for SharedKey {
   fn verify(&self, data: &[u8], expected_mac: &[u8]) -> HttpSigResult<()> {
     match self {
       SharedKey::HmacSha256(key) => {
+        #[cfg(feature = "tracing")]
         debug!("Verify HmacSha256");
         let mut mac = HmacSha256::new_from_slice(key).unwrap();
         mac.update(data);

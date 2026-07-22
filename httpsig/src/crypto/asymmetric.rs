@@ -1,8 +1,5 @@
 use super::AlgorithmName;
-use crate::{
-  error::{HttpSigError, HttpSigResult},
-  trace::*,
-};
+use crate::error::{HttpSigError, HttpSigResult};
 use ecdsa::{
   elliptic_curve::{PublicKey as EcPublicKey, SecretKey as EcSecretKey, sec1::ToEncodedPoint},
   signature::{DigestSigner, DigestVerifier},
@@ -13,6 +10,8 @@ use p384::NistP384;
 use pkcs8::{Document, PrivateKeyInfo, der::Decode};
 use sha2::{Digest, Sha256, Sha384};
 use spki::SubjectPublicKeyInfoRef;
+#[cfg(feature = "tracing")]
+use tracing::debug;
 
 #[cfg(feature = "rsa-signature")]
 use rsa::{
@@ -65,16 +64,19 @@ impl SecretKey {
   pub fn from_bytes(alg: &AlgorithmName, bytes: &[u8]) -> HttpSigResult<Self> {
     match alg {
       AlgorithmName::EcdsaP256Sha256 => {
+        #[cfg(feature = "tracing")]
         debug!("Read P256 private key");
         let sk = EcSecretKey::from_bytes(bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
         Ok(Self::EcdsaP256Sha256(sk))
       }
       AlgorithmName::EcdsaP384Sha384 => {
+        #[cfg(feature = "tracing")]
         debug!("Read P384 private key");
         let sk = EcSecretKey::from_bytes(bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
         Ok(Self::EcdsaP384Sha384(sk))
       }
       AlgorithmName::Ed25519 => {
+        #[cfg(feature = "tracing")]
         debug!("Read Ed25519 private key");
         let mut seed = [0u8; 32];
         seed.copy_from_slice(bytes);
@@ -176,6 +178,7 @@ impl super::SigningKey for SecretKey {
   fn sign(&self, data: &[u8]) -> HttpSigResult<Vec<u8>> {
     match &self {
       Self::EcdsaP256Sha256(sk) => {
+        #[cfg(feature = "tracing")]
         debug!("Sign EcdsaP256Sha256");
         let sk = ecdsa::SigningKey::from(sk);
         let mut digest = <Sha256 as Digest>::new();
@@ -184,6 +187,7 @@ impl super::SigningKey for SecretKey {
         Ok(sig.to_bytes().to_vec())
       }
       Self::EcdsaP384Sha384(sk) => {
+        #[cfg(feature = "tracing")]
         debug!("Sign EcdsaP384Sha384");
         let sk = ecdsa::SigningKey::from(sk);
         let mut digest = <Sha384 as Digest>::new();
@@ -192,6 +196,7 @@ impl super::SigningKey for SecretKey {
         Ok(sig.to_bytes().to_vec())
       }
       Self::Ed25519(sk) => {
+        #[cfg(feature = "tracing")]
         debug!("Sign Ed25519");
         let sig = sk.sign(data, Some(ed25519_compact::Noise::default()));
         Ok(sig.as_ref().to_vec())
@@ -260,16 +265,19 @@ impl PublicKey {
   pub fn from_bytes(alg: &AlgorithmName, bytes: &[u8]) -> HttpSigResult<Self> {
     match alg {
       AlgorithmName::EcdsaP256Sha256 => {
+        #[cfg(feature = "tracing")]
         debug!("Read P256 public key");
         let pk = EcPublicKey::from_sec1_bytes(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
         Ok(Self::EcdsaP256Sha256(pk))
       }
       AlgorithmName::EcdsaP384Sha384 => {
+        #[cfg(feature = "tracing")]
         debug!("Read P384 public key");
         let pk = EcPublicKey::from_sec1_bytes(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
         Ok(Self::EcdsaP384Sha384(pk))
       }
       AlgorithmName::Ed25519 => {
+        #[cfg(feature = "tracing")]
         debug!("Read Ed25519 public key");
         let pk = ed25519_compact::PublicKey::from_slice(bytes).map_err(|e| HttpSigError::ParsePublicKeyError(e.to_string()))?;
         Ok(Self::Ed25519(pk))
@@ -358,6 +366,7 @@ impl super::VerifyingKey for PublicKey {
   fn verify(&self, data: &[u8], signature: &[u8]) -> HttpSigResult<()> {
     match self {
       Self::EcdsaP256Sha256(pk) => {
+        #[cfg(feature = "tracing")]
         debug!("Verify EcdsaP256Sha256");
         let signature = ecdsa::Signature::<NistP256>::from_bytes(signature.into())
           .map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
@@ -368,6 +377,7 @@ impl super::VerifyingKey for PublicKey {
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
       Self::EcdsaP384Sha384(pk) => {
+        #[cfg(feature = "tracing")]
         debug!("Verify EcdsaP384Sha384");
         let signature = ecdsa::Signature::<NistP384>::from_bytes(signature.into())
           .map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
@@ -378,6 +388,7 @@ impl super::VerifyingKey for PublicKey {
           .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
       Self::Ed25519(pk) => {
+        #[cfg(feature = "tracing")]
         debug!("Verify Ed25519");
         let sig =
           ed25519_compact::Signature::from_slice(signature).map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
@@ -386,6 +397,7 @@ impl super::VerifyingKey for PublicKey {
       }
       #[cfg(feature = "rsa-signature")]
       Self::RsaV1_5Sha256(pk) => {
+        #[cfg(feature = "tracing")]
         debug!("Verify RsaV1_5Sha256");
         let sig = pkcs1v15::Signature::try_from(signature).map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
         pk.verify(data, &sig)

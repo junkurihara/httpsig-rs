@@ -2,13 +2,15 @@ use crate::{
   crypto::{AlgorithmName, SigningKey},
   error::{HttpSigError, HttpSigResult},
   message_component::HttpMessageComponentId,
-  trace::*,
   util::has_unique_elements,
 };
 use base64::{Engine as _, engine::general_purpose};
 use rand::RngExt;
 use sfv::{FieldType, ListEntry, Parser};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(feature = "tracing")]
+use tracing::error;
 
 const DEFAULT_DURATION: u64 = 300;
 
@@ -197,6 +199,7 @@ impl TryFrom<&ListEntry> for HttpSignatureParams {
         "keyid" => params.keyid = bare_item.as_string().map(|v| v.to_string()),
         "tag" => params.tag = bare_item.as_string().map(|v| v.to_string()),
         _ => {
+          #[cfg(feature = "tracing")]
           error!("Ignore invalid signature parameter: {}", key)
         }
       });

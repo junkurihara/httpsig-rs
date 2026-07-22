@@ -4,11 +4,10 @@ use super::{
   component_param::{HttpMessageComponentParam, handle_params_key_into, handle_params_sf},
   component_value::HttpMessageComponentValue,
 };
-use crate::{
-  error::{HttpSigError, HttpSigResult},
-  trace::*,
-};
+use crate::error::{HttpSigError, HttpSigResult};
 
+#[cfg(feature = "tracing")]
+use tracing::debug;
 /* ---------------------------------------------------------------- */
 #[derive(Debug, Clone)]
 /// Http message component
@@ -160,6 +159,7 @@ pub(super) fn build_http_field_component(
         return Err(HttpSigError::NotYetImplemented("`bs` is not supported yet".to_string()));
       }
       HttpMessageComponentParam::Req => {
+        #[cfg(feature = "tracing")]
         debug!("`req` is given for http field component");
       }
       HttpMessageComponentParam::Tr => return Err(HttpSigError::NotYetImplemented("`tr` is not supported yet".to_string())),

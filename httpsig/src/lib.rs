@@ -10,7 +10,6 @@ mod error;
 mod message_component;
 mod signature_base;
 mod signature_params;
-mod trace;
 mod util;
 
 pub mod prelude {
