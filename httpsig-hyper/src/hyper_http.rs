@@ -935,11 +935,13 @@ fn extract_http_message_component<B>(
 ) -> HyperSigResult<HttpMessageComponent> {
   match &target_component_id.name {
     HttpMessageComponentName::HttpField(_) => extract_http_field(req_or_res, target_component_id),
-    HttpMessageComponentName::Derived(_) => extract_derived_component(req_or_res, target_component_id),
+    HttpMessageComponentName::Derived(_) => {
+      extract_derived_component(req_or_res, target_component_id)
+    }
   }
 }
 
 /* --------------------------------------- */
-#[cfg(test)]
+#[cfg(all(test, feature = "digest-sha256"))]
 #[path = "hyper_http_tests.rs"]
 mod tests;

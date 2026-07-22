@@ -44,12 +44,14 @@ pub trait ContentDigest: http_body::Body {
 /// Returns the digest of the given body in Vec<u8>
 fn derive_digest(body_bytes: &Bytes, cd_type: &ContentDigestType) -> Vec<u8> {
   match cd_type {
+    #[cfg(feature = "digest-sha256")]
     ContentDigestType::Sha256 => {
       let mut hasher = sha2::Sha256::new();
       hasher.update(body_bytes);
       hasher.finalize().to_vec()
     }
 
+    #[cfg(feature = "digest-sha512")]
     ContentDigestType::Sha512 => {
       let mut hasher = sha2::Sha512::new();
       hasher.update(body_bytes);
@@ -263,17 +265,30 @@ mod tests {
   #[tokio::test]
   async fn content_digest() {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
-    let (_body_bytes, digest) = body.into_bytes_with_digest(&ContentDigestType::Sha256).await.unwrap();
+    #[cfg(feature = "digest-sha256")]
+    {
+      let (_body_bytes, digest) = body
+        .into_bytes_with_digest(&ContentDigestType::Sha256)
+        .await
+        .unwrap();
 
-    assert_eq!(digest, "X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=");
+      assert_eq!(digest, "X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=");
+    }
 
-    let (_body_bytes, digest) = body.into_bytes_with_digest(&ContentDigestType::Sha512).await.unwrap();
-    assert_eq!(
-      digest,
-      "WZDPaVn/7XgHaAy8pmojAkGWoRx2UFChF41A2svX+TaPm+AbwAgBWnrIiYllu7BNNyealdVLvRwEmTHWXvJwew=="
-    );
+    #[cfg(feature = "digest-sha512")]
+    {
+      let (_body_bytes, digest) = body
+        .into_bytes_with_digest(&ContentDigestType::Sha512)
+        .await
+        .unwrap();
+      assert_eq!(
+        digest,
+        "WZDPaVn/7XgHaAy8pmojAkGWoRx2UFChF41A2svX+TaPm+AbwAgBWnrIiYllu7BNNyealdVLvRwEmTHWXvJwew=="
+      );
+    }
   }
 
+  #[cfg(feature = "digest-sha256")]
   #[tokio::test]
   async fn hyper_request_test() {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
@@ -295,6 +310,7 @@ mod tests {
     assert!(verified.is_ok());
   }
 
+  #[cfg(feature = "digest-sha256")]
   #[tokio::test]
   async fn hyper_response_test() {
     let body = Full::new(&b"{\"hello\": \"world\"}"[..]);
@@ -315,6 +331,7 @@ mod tests {
     assert!(verified.is_ok());
   }
 
+  #[cfg(feature = "digest-sha256")]
   #[tokio::test]
   async fn hyper_request_digest_mismatch_by_body_tamper_should_fail() {
     // 1) Create a request and set a correct Content-Digest for the original body
@@ -344,6 +361,7 @@ mod tests {
     }
   }
 
+  #[cfg(feature = "digest-sha256")]
   #[tokio::test]
   async fn hyper_response_digest_mismatch_by_header_tamper_should_fail() {
     // 1) Create a response and set a correct Content-Digest
@@ -397,6 +415,7 @@ mod tests {
     }
   }
 
+  #[cfg(feature = "digest-sha256")]
   #[tokio::test]
   async fn hyper_request_digest_length_mismatch_should_fail() {
     // 1) Create a request and attach a valid Content-Digest header
