@@ -24,25 +24,25 @@ indexmap = { version = "2.14.0" }
 rand = { version = "0.10.2" }
 
 # crypto
-pkcs8 = { version = "0.10.2", default-features = false, features = ["pem"] }
-spki = { version = "0.7.3", default-features = false, features = ["pem"] }
-sec1 = { version = "0.7.3", default-features = false, features = ["der"] }
+pkcs8 = { version = "0.11.0", default-features = false, features = ["pem"] }
+spki = { version = "0.8.0", default-features = false, features = ["pem"] }
+sec1 = { version = "0.8.1", default-features = false, features = ["der"] }
 ed25519-compact = { version = "2.3.1", default-features = false, features = [
   "random",
 ] }
-ecdsa = { version = "0.16.9", default-features = false, features = [
-  "arithmetic",
+ecdsa = { version = "0.17.0", default-features = false, features = [
+  "algorithm",
 ] }
-p256 = { version = "0.13.2", default-features = false, features = [
-  "arithmetic",
-  "ecdsa",
-] }
-p384 = { version = "0.13.1", default-features = false, features = [
+p256 = { version = "0.14.0", default-features = false, features = [
   "arithmetic",
   "ecdsa",
 ] }
-hmac = { version = "0.12.1" }
-sha2 = { version = "0.10.9", default-features = false }
+p384 = { version = "0.14.0", default-features = false, features = [
+  "arithmetic",
+  "ecdsa",
+] }
+hmac = { version = "0.13.0" }
+sha2 = { version = "0.11.0", default-features = false }
 bytes = { version = "1.12.1" }
 
 # rsa is optional
@@ -57,5 +57,3 @@ base64 = { version = "0.22.1" }
 # for rfc8941 structured field values
 sfv = { version = "0.15.0" }
 
-[dev-dependencies]
-rand-085 = { package = "rand", version = "0.8.7" } # testing only

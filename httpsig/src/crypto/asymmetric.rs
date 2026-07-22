@@ -4,13 +4,13 @@ use crate::{
   trace::*,
 };
 use ecdsa::{
-  elliptic_curve::{PublicKey as EcPublicKey, SecretKey as EcSecretKey, sec1::ToEncodedPoint},
+  elliptic_curve::{PublicKey as EcPublicKey, SecretKey as EcSecretKey, sec1::ToSec1Point},
   signature::{DigestSigner, DigestVerifier},
 };
 use ed25519_compact::{PublicKey as Ed25519PublicKey, SecretKey as Ed25519SecretKey};
 use p256::NistP256;
 use p384::NistP384;
-use pkcs8::{Document, PrivateKeyInfo, der::Decode};
+use pkcs8::{Document, PrivateKeyInfoRef, der::Decode};
 use sha2::{Digest, Sha256, Sha384};
 use spki::SubjectPublicKeyInfoRef;
 
@@ -66,12 +66,12 @@ impl SecretKey {
     match alg {
       AlgorithmName::EcdsaP256Sha256 => {
         debug!("Read P256 private key");
-        let sk = EcSecretKey::from_bytes(bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
+        let sk = EcSecretKey::from_slice(bytes).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
         Ok(Self::EcdsaP256Sha256(sk))
       }
       AlgorithmName::EcdsaP384Sha384 => {
         debug!("Read P384 private key");
-        let sk = EcSecretKey::from_bytes(bytes.into()).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
+        let sk = EcSecretKey::from_slice(bytes).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
         Ok(Self::EcdsaP384Sha384(sk))
       }
       AlgorithmName::Ed25519 => {
@@ -101,7 +101,7 @@ impl SecretKey {
   /// parse der
   /// Derive secret key from der bytes
   pub fn from_der(alg: &AlgorithmName, der: &[u8]) -> HttpSigResult<Self> {
-    let pki = PrivateKeyInfo::from_der(der).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
+    let pki = PrivateKeyInfoRef::from_der(der).map_err(|e| HttpSigError::ParsePrivateKeyError(e.to_string()))?;
 
     let sk_bytes = match pki.algorithm.oid.to_string().as_ref() {
       // ec
@@ -119,10 +119,9 @@ impl SecretKey {
         if algorithm_name != *alg {
           return Err(HttpSigError::ParsePrivateKeyError("Algorithm mismatch".to_string()));
         }
-        let sk_bytes = sec1::EcPrivateKey::try_from(pki.private_key)
+        sec1::EcPrivateKey::try_from(pki.private_key.as_bytes())
           .map_err(|e| HttpSigError::ParsePrivateKeyError(format!("Error decoding EcPrivateKey: {e}")))?
-          .private_key;
-        sk_bytes
+          .private_key
       }
       // ed25519
       algorithm_oids::Ed25519 => {
@@ -130,7 +129,7 @@ impl SecretKey {
         if AlgorithmName::Ed25519 != *alg {
           return Err(HttpSigError::ParsePrivateKeyError("Algorithm mismatch".to_string()));
         }
-        &pki.private_key[2..]
+        &pki.private_key.as_bytes()[2..]
       }
       // rsa
       #[cfg(feature = "rsa-signature")]
@@ -140,7 +139,7 @@ impl SecretKey {
           AlgorithmName::RsaV1_5Sha256 | AlgorithmName::RsaPssSha512 => {}
           _ => return Err(HttpSigError::ParsePrivateKeyError("Algorithm mismatch".to_string())),
         }
-        pki.private_key
+        pki.private_key.as_bytes()
       }
       _ => return Err(HttpSigError::ParsePrivateKeyError("Unsupported algorithm".to_string())),
     };
@@ -178,17 +177,13 @@ impl super::SigningKey for SecretKey {
       Self::EcdsaP256Sha256(sk) => {
         debug!("Sign EcdsaP256Sha256");
         let sk = ecdsa::SigningKey::from(sk);
-        let mut digest = <Sha256 as Digest>::new();
-        digest.update(data);
-        let sig: ecdsa::Signature<NistP256> = sk.sign_digest(digest);
+        let sig: ecdsa::Signature<NistP256> = sk.sign_digest(|digest: &mut Sha256| digest.update(data));
         Ok(sig.to_bytes().to_vec())
       }
       Self::EcdsaP384Sha384(sk) => {
         debug!("Sign EcdsaP384Sha384");
         let sk = ecdsa::SigningKey::from(sk);
-        let mut digest = <Sha384 as Digest>::new();
-        digest.update(data);
-        let sig: ecdsa::Signature<NistP384> = sk.sign_digest(digest);
+        let sig: ecdsa::Signature<NistP384> = sk.sign_digest(|digest: &mut Sha384| digest.update(data));
         Ok(sig.to_bytes().to_vec())
       }
       Self::Ed25519(sk) => {
@@ -359,23 +354,31 @@ impl super::VerifyingKey for PublicKey {
     match self {
       Self::EcdsaP256Sha256(pk) => {
         debug!("Verify EcdsaP256Sha256");
-        let signature = ecdsa::Signature::<NistP256>::from_bytes(signature.into())
-          .map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
+        let signature =
+          ecdsa::Signature::<NistP256>::from_slice(signature).map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
         let vk = ecdsa::VerifyingKey::from(pk);
-        let mut digest = <Sha256 as Digest>::new();
-        digest.update(data);
-        vk.verify_digest(digest, &signature)
-          .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
+        vk.verify_digest(
+          |digest: &mut Sha256| {
+            digest.update(data);
+            Ok(())
+          },
+          &signature,
+        )
+        .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
       Self::EcdsaP384Sha384(pk) => {
         debug!("Verify EcdsaP384Sha384");
-        let signature = ecdsa::Signature::<NistP384>::from_bytes(signature.into())
-          .map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
+        let signature =
+          ecdsa::Signature::<NistP384>::from_slice(signature).map_err(|e| HttpSigError::ParseSignatureError(e.to_string()))?;
         let vk = ecdsa::VerifyingKey::from(pk);
-        let mut digest = <Sha384 as Digest>::new();
-        digest.update(data);
-        vk.verify_digest(digest, &signature)
-          .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
+        vk.verify_digest(
+          |digest: &mut Sha384| {
+            digest.update(data);
+            Ok(())
+          },
+          &signature,
+        )
+        .map_err(|e| HttpSigError::InvalidSignature(e.to_string()))
       }
       Self::Ed25519(pk) => {
         debug!("Verify Ed25519");
@@ -409,8 +412,8 @@ impl super::VerifyingKey for PublicKey {
     use base64::{Engine as _, engine::general_purpose};
 
     let bytes = match self {
-      Self::EcdsaP256Sha256(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
-      Self::EcdsaP384Sha384(vk) => vk.to_encoded_point(true).as_bytes().to_vec(),
+      Self::EcdsaP256Sha256(vk) => vk.to_sec1_point(true).as_bytes().to_vec(),
+      Self::EcdsaP384Sha384(vk) => vk.to_sec1_point(true).as_bytes().to_vec(),
       Self::Ed25519(vk) => vk.as_ref().to_vec(),
       #[cfg(feature = "rsa-signature")]
       Self::RsaV1_5Sha256(vk) => vk
@@ -447,7 +450,7 @@ impl super::VerifyingKey for PublicKey {
 
 #[cfg(test)]
 mod tests {
-  use p256::elliptic_curve::group::GroupEncoding;
+  use p256::elliptic_curve::{Generate, group::GroupEncoding};
 
   use super::*;
   use std::matches;
@@ -537,8 +540,7 @@ tQIDAQAB
     let pk = PublicKey::from_bytes(&AlgorithmName::Ed25519, ed25519_pk).unwrap();
     assert!(matches!(pk, PublicKey::Ed25519(_)));
 
-    let mut rng = rand_085::thread_rng();
-    let es256_sk = p256::ecdsa::SigningKey::random(&mut rng);
+    let es256_sk = p256::ecdsa::SigningKey::generate_from_rng(&mut rand::rng());
     let es256_pk = es256_sk.verifying_key();
     let sk = SecretKey::from_bytes(&AlgorithmName::EcdsaP256Sha256, es256_sk.to_bytes().as_ref()).unwrap();
     assert!(matches!(sk, SecretKey::EcdsaP256Sha256(_)));

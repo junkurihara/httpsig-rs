@@ -4,7 +4,7 @@ use crate::{
   trace::*,
 };
 use base64::{Engine as _, engine::general_purpose};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<sha2::Sha256>;
