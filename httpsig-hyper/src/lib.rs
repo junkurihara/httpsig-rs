@@ -4,22 +4,18 @@
 //! This crate extends hyper's http request and response messages with the ability to generate and verify HTTP signatures.
 //! Additionally it also provides a way to set and verify content-digest header.
 //!
-//! ## Async-first design
+//! ## Sync API
 //!
-//! The primary API is fully async, allowing concurrent processing of multiple signatures via
-//! [`MessageSignatureReq`] and [`MessageSignatureRes`].
+//! A synchronous API to sign and verify requuest and responses is provided via
+//! [`MessageSignatureReqSync`] and [`MessageSignatureResSync`]. 
 //!
-//! ## Blocking API
+//! ## Async API
 //!
-//! When the `blocking` feature is enabled (on by default), synchronous wrappers are provided via
-//! [`MessageSignatureReqSync`] and [`MessageSignatureResSync`]. These use `futures::executor::block_on`
-//! internally and are intended **exclusively for non-async contexts**.
+//! An asynchronous API is provided via
+//! [`MessageSignatureReq`] and [`MessageSignatureRes`] for backward compatibility.
+//! Signing and Verification do not require any IO and therefore do not benefit from
+//! asynchronous processing.
 //!
-//! # Panics
-//!
-//! Calling any `*_sync` method from within an async runtime (e.g. inside a `tokio::spawn` task)
-//! will panic. If you are already in an async context, use the async methods directly.
-
 mod error;
 mod hyper_content_digest;
 mod hyper_http;
@@ -211,7 +207,6 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(verification_res.is_err());
   }
 
-  #[cfg(feature = "blocking")]
   #[test]
   fn test_set_verify_request_sync() {
     // show usage of set_message_signature_sync and verify_message_signature_sync
@@ -235,7 +230,6 @@ MCowBQYDK2VwAyEA1ixMQcxO46PLlgQfYS46ivFd+n0CcDHSKUnuhm3i1O0=
     assert!(verification_res.is_ok());
   }
 
-  #[cfg(feature = "blocking")]
   #[test]
   fn test_set_verify_response_sync() {
     // show usage of set_message_signature_sync and verify_message_signature_sync

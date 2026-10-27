@@ -132,7 +132,6 @@ pub trait MessageSignatureRes {
   ) -> Result<IndexMap<SignatureName, (HttpSignatureBase, HttpSignatureHeaders)>, Self::Error>;
 }
 
-#[cfg(feature = "blocking")]
 /* --------------------------------------- */
 /// Synchronous counterpart of [`MessageSignatureReq`].
 pub trait MessageSignatureReqSync: MessageSignatureReq {
@@ -169,7 +168,6 @@ pub trait MessageSignatureReqSync: MessageSignatureReq {
     T: VerifyingKey + Sync;
 }
 
-#[cfg(feature = "blocking")]
 /// Synchronous counterpart of [`MessageSignatureRes`].
 pub trait MessageSignatureResSync: MessageSignatureRes {
   /// Set the http message signature from given http signature params and signing key
@@ -238,7 +236,6 @@ where
   }
 }
 
-#[cfg(feature = "blocking")]
 impl<D> MessageSignatureReqSync for Request<D>
 where
   D: Send + Sync,
@@ -345,7 +342,6 @@ where
   }
 }
 
-#[cfg(feature = "blocking")]
 impl<D: Send + Sync> MessageSignatureResSync for Response<D>
 {
   fn set_message_signature_sync<T, B>(
