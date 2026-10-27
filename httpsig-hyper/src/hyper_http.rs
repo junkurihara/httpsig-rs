@@ -1,6 +1,5 @@
 use crate::error::{HyperSigError, HyperSigResult};
 use http::{HeaderMap, Request, Response};
-use http_body::Body;
 use httpsig::prelude::{
   message_component::{
     DerivedComponentName, HttpMessageComponent, HttpMessageComponentId, HttpMessageComponentName, HttpMessageComponentParam,
@@ -134,16 +133,9 @@ pub trait MessageSignatureRes {
 }
 
 /* --------------------------------------- */
-#[cfg(feature = "blocking")]
 /// Synchronous counterpart of [`MessageSignatureReq`].
-///
-/// Every method delegates to the corresponding async method via `futures::executor::block_on`.
-///
-/// # Panics
-///
-/// All methods will panic if called from within an async runtime (e.g. a `tokio` task).
-/// Use the async [`MessageSignatureReq`] methods instead when you are already in an async context.
 pub trait MessageSignatureReqSync: MessageSignatureReq {
+  /// Set the http message signature from given http signature params and signing key
   fn set_message_signature_sync<T>(
     &mut self,
     signature_params: &HttpSignatureParams,
@@ -176,16 +168,9 @@ pub trait MessageSignatureReqSync: MessageSignatureReq {
     T: VerifyingKey + Sync;
 }
 
-#[cfg(feature = "blocking")]
 /// Synchronous counterpart of [`MessageSignatureRes`].
-///
-/// Every method delegates to the corresponding async method via `futures::executor::block_on`.
-///
-/// # Panics
-///
-/// All methods will panic if called from within an async runtime (e.g. a `tokio` task).
-/// Use the async [`MessageSignatureRes`] methods instead when you are already in an async context.
 pub trait MessageSignatureResSync: MessageSignatureRes {
+  /// Set the http message signature from given http signature params and signing key
   fn set_message_signature_sync<T, B>(
     &mut self,
     signature_params: &HttpSignatureParams,
@@ -195,8 +180,7 @@ pub trait MessageSignatureResSync: MessageSignatureRes {
   ) -> Result<(), Self::Error>
   where
     Self: Sized,
-    T: SigningKey + Sync,
-    B: Sync;
+    T: SigningKey + Sync;
 
   fn set_message_signatures_sync<T, B>(
     &mut self,
@@ -205,8 +189,7 @@ pub trait MessageSignatureResSync: MessageSignatureRes {
   ) -> Result<(), Self::Error>
   where
     Self: Sized,
-    T: SigningKey + Sync,
-    B: Sync;
+    T: SigningKey + Sync;
 
   fn verify_message_signature_sync<T, B>(
     &self,
@@ -216,8 +199,7 @@ pub trait MessageSignatureResSync: MessageSignatureRes {
   ) -> Result<SignatureName, Self::Error>
   where
     Self: Sized,
-    T: VerifyingKey + Sync,
-    B: Sync;
+    T: VerifyingKey + Sync;
 
   fn verify_message_signatures_sync<T, B>(
     &self,
@@ -226,14 +208,13 @@ pub trait MessageSignatureResSync: MessageSignatureRes {
   ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
   where
     Self: Sized,
-    T: VerifyingKey + Sync,
-    B: Sync;
+    T: VerifyingKey + Sync;
 }
 
 /* --------------------------------------- */
 impl<D> MessageSignature for Request<D>
 where
-  D: Send + Body + Sync,
+  D: Send + Sync,
 {
   type Error = HyperSigError;
 
@@ -255,9 +236,199 @@ where
   }
 }
 
+impl<D> MessageSignatureReqSync for Request<D>
+where
+  D: Send + Sync,
+{
+  /// Set the http message signature from given http signature params and signing key
+  fn set_message_signature_sync<T>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    signing_key: &T,
+    signature_name: Option<&str>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    self
+      .set_message_signatures_sync(&[(signature_params, signing_key, signature_name)])
+  }
+
+  fn set_message_signatures_sync<T>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    let req_or_res = RequestOrResponse::Request(self);
+    let vec_signature_bases = params_key_name
+      .iter()
+      .map(|(params, key, name)| {
+        build_signature_base(&req_or_res, params, None as Option<&Request<()>>).map(|base| (base, *key, *name))
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+    let vec_signature_headers = vec_signature_bases
+        .into_iter()
+        .map(|(base, key, name)| base.build_signature_headers(key, name) )
+    .collect::<Result<Vec<_>, _>>()?;
+    vec_signature_headers.iter().try_for_each(|headers| {
+      self
+        .headers_mut()
+        .append("signature-input", headers.signature_input_header_value().parse()?);
+      self
+        .headers_mut()
+        .append("signature", headers.signature_header_value().parse()?);
+      Ok(()) as Result<(), HyperSigError>
+    })
+  }
+
+  /// Verify the http message signature with given verifying key if the request has signature and signature-input headers
+  /// Return Ok(()) if the signature is valid.
+  /// If invalid for the given key or error occurs (like the case where the request does not have signature and/or signature-input headers), return Err.
+  /// If key_id is given, it is used to match the key id in signature params
+  fn verify_message_signature_sync<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<SignatureName, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    self.verify_message_signatures_sync(&[(verifying_key, key_id)])?
+      .pop()
+      .unwrap()
+  }
+
+  fn verify_message_signatures_sync<T>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    if !self.has_message_signature() {
+      return Err(HyperSigError::NoSignatureHeaders(
+        "The request does not have signature and signature-input headers".to_string(),
+      ));
+    }
+    let map_signature_with_base = self.extract_signatures()?;
+    verify_message_signatures_inner(&map_signature_with_base, key_and_id)
+  }
+}
+
+/* --------------------------------------- */
+impl<D> MessageSignature for Response<D>
+where
+  D: Send + Sync,
+{
+  type Error = HyperSigError;
+
+  /// Check if the response has signature and signature-input headers
+  fn has_message_signature(&self) -> bool {
+    has_message_signature_inner(self.headers())
+  }
+
+  /// Extract all key ids for signature bases contained in the response headers
+  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>, Self::Error> {
+    let req_or_res = RequestOrResponse::Response(self);
+    get_alg_key_ids_inner(&req_or_res)
+  }
+
+  /// Extract all signature params used to generate signature bases contained in the response headers
+  fn get_signature_params(&self) -> Result<IndexMap<SignatureName, HttpSignatureParams>, Self::Error> {
+    let req_or_res = RequestOrResponse::Response(self);
+    get_signature_params_inner(&req_or_res)
+  }
+}
+
+impl<D: Send + Sync> MessageSignatureResSync for Response<D>
+{
+  fn set_message_signature_sync<T, B>(
+    &mut self,
+    signature_params: &HttpSignatureParams,
+    signing_key: &T,
+    signature_name: Option<&str>,
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    self
+      .set_message_signatures_sync(&[(signature_params, signing_key, signature_name)], req_for_param)
+  }
+
+  fn set_message_signatures_sync<T, B>(
+    &mut self,
+    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<(), Self::Error>
+  where
+    Self: Sized,
+    T: SigningKey + Sync,
+  {
+    let req_or_res = RequestOrResponse::Response(self);
+
+    let vec_signature_bases = params_key_name
+      .iter()
+      .map(|(params, key, name)| build_signature_base(&req_or_res, params, req_for_param).map(|base| (base, *key, *name)))
+      .collect::<Result<Vec<_>, _>>()?;
+    let vec_signature_headers = vec_signature_bases
+        .into_iter()
+        .map(|(base, key, name)| base.build_signature_headers(key, name))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    vec_signature_headers.iter().try_for_each(|headers| {
+      self
+        .headers_mut()
+        .append("signature-input", headers.signature_input_header_value().parse()?);
+      self
+        .headers_mut()
+        .append("signature", headers.signature_header_value().parse()?);
+      Ok(()) as Result<(), HyperSigError>
+    })
+  }
+
+  fn verify_message_signature_sync<T, B>(
+    &self,
+    verifying_key: &T,
+    key_id: Option<&str>,
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<SignatureName, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    self
+      .verify_message_signatures_sync(&[(verifying_key, key_id)], req_for_param)?
+      .pop()
+      .unwrap()
+  }
+
+  fn verify_message_signatures_sync<T, B>(
+    &self,
+    key_and_id: &[(&T, Option<&str>)],
+    req_for_param: Option<&Request<B>>,
+  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
+  where
+    Self: Sized,
+    T: VerifyingKey + Sync,
+  {
+    if !self.has_message_signature() {
+      return Err(HyperSigError::NoSignatureHeaders(
+        "The response does not have signature and signature-input headers".to_string(),
+      ));
+    }
+    let map_signature_with_base = self.extract_signatures(req_for_param)?;
+    verify_message_signatures_inner(&map_signature_with_base, key_and_id)
+  }
+}
+
+/* --------------------------------------- */
 impl<D> MessageSignatureReq for Request<D>
 where
-  D: Send + Body + Sync,
+  D: Send + Sync,
 {
   type Error = HyperSigError;
 
@@ -285,30 +456,7 @@ where
     Self: Sized,
     T: SigningKey + Sync,
   {
-    let req_or_res = RequestOrResponse::Request(self);
-    let vec_signature_bases = params_key_name
-      .iter()
-      .map(|(params, key, name)| {
-        build_signature_base(&req_or_res, params, None as Option<&Request<()>>).map(|base| (base, *key, *name))
-      })
-      .collect::<Result<Vec<_>, _>>()?;
-    let vec_signature_headers = futures::future::join_all(
-      vec_signature_bases
-        .into_iter()
-        .map(|(base, key, name)| async move { base.build_signature_headers(key, name) }),
-    )
-    .await
-    .into_iter()
-    .collect::<Result<Vec<_>, _>>()?;
-    vec_signature_headers.iter().try_for_each(|headers| {
-      self
-        .headers_mut()
-        .append("signature-input", headers.signature_input_header_value().parse()?);
-      self
-        .headers_mut()
-        .append("signature", headers.signature_header_value().parse()?);
-      Ok(()) as Result<(), HyperSigError>
-    })
+    self.set_message_signatures_sync(params_key_name)
   }
 
   /// Verify the http message signature with given verifying key if the request has signature and signature-input headers
@@ -321,10 +469,7 @@ where
     T: VerifyingKey + Sync,
   {
     self
-      .verify_message_signatures(&[(verifying_key, key_id)])
-      .await?
-      .pop()
-      .unwrap()
+      .verify_message_signature_sync(verifying_key, key_id)
   }
 
   async fn verify_message_signatures<T>(
@@ -335,13 +480,7 @@ where
     Self: Sized,
     T: VerifyingKey + Sync,
   {
-    if !self.has_message_signature() {
-      return Err(HyperSigError::NoSignatureHeaders(
-        "The request does not have signature and signature-input headers".to_string(),
-      ));
-    }
-    let map_signature_with_base = self.extract_signatures()?;
-    verify_message_signatures_inner(&map_signature_with_base, key_and_id).await
+    self.verify_message_signatures_sync(key_and_id)
   }
 
   /// Extract all signature bases contained in the request headers
@@ -351,35 +490,8 @@ where
   }
 }
 
-/* --------------------------------------- */
-impl<D> MessageSignature for Response<D>
-where
-  D: Send + Body + Sync,
-{
-  type Error = HyperSigError;
 
-  /// Check if the response has signature and signature-input headers
-  fn has_message_signature(&self) -> bool {
-    has_message_signature_inner(self.headers())
-  }
-
-  /// Extract all key ids for signature bases contained in the response headers
-  fn get_alg_key_ids(&self) -> Result<IndexMap<SignatureName, (Option<AlgorithmName>, Option<KeyId>)>, Self::Error> {
-    let req_or_res = RequestOrResponse::Response(self);
-    get_alg_key_ids_inner(&req_or_res)
-  }
-
-  /// Extract all signature params used to generate signature bases contained in the response headers
-  fn get_signature_params(&self) -> Result<IndexMap<SignatureName, HttpSignatureParams>, Self::Error> {
-    let req_or_res = RequestOrResponse::Response(self);
-    get_signature_params_inner(&req_or_res)
-  }
-}
-
-impl<D> MessageSignatureRes for Response<D>
-where
-  D: Send + Body + Sync,
-{
+impl<D: Send + Sync> MessageSignatureRes for Response<D> {
   type Error = HyperSigError;
 
   /// Set the http message signature from given http signature params and signing key
@@ -395,9 +507,7 @@ where
     T: SigningKey + Sync,
     B: Sync,
   {
-    self
-      .set_message_signatures(&[(signature_params, signing_key, signature_name)], req_for_param)
-      .await
+    self.set_message_signature_sync(signature_params, signing_key, signature_name, req_for_param)
   }
 
   async fn set_message_signatures<T, B>(
@@ -408,31 +518,9 @@ where
   where
     Self: Sized,
     T: SigningKey + Sync,
+    B: Sync,
   {
-    let req_or_res = RequestOrResponse::Response(self);
-
-    let vec_signature_bases = params_key_name
-      .iter()
-      .map(|(params, key, name)| build_signature_base(&req_or_res, params, req_for_param).map(|base| (base, *key, *name)))
-      .collect::<Result<Vec<_>, _>>()?;
-    let vec_signature_headers = futures::future::join_all(
-      vec_signature_bases
-        .into_iter()
-        .map(|(base, key, name)| async move { base.build_signature_headers(key, name) }),
-    )
-    .await
-    .into_iter()
-    .collect::<Result<Vec<_>, _>>()?;
-
-    vec_signature_headers.iter().try_for_each(|headers| {
-      self
-        .headers_mut()
-        .append("signature-input", headers.signature_input_header_value().parse()?);
-      self
-        .headers_mut()
-        .append("signature", headers.signature_header_value().parse()?);
-      Ok(()) as Result<(), HyperSigError>
-    })
+     self.set_message_signatures_sync(params_key_name, req_for_param)
   }
 
   /// Verify the http message signature with given verifying key if the response has signature and signature-input headers
@@ -451,8 +539,7 @@ where
     B: Sync,
   {
     self
-      .verify_message_signatures(&[(verifying_key, key_id)], req_for_param)
-      .await?
+      .verify_message_signatures_sync(&[(verifying_key, key_id)], req_for_param)?
       .pop()
       .unwrap()
   }
@@ -465,17 +552,12 @@ where
   where
     Self: Sized,
     T: VerifyingKey + Sync,
+    B: Sync,
   {
-    if !self.has_message_signature() {
-      return Err(HyperSigError::NoSignatureHeaders(
-        "The response does not have signature and signature-input headers".to_string(),
-      ));
-    }
-    let map_signature_with_base = self.extract_signatures(req_for_param)?;
-    verify_message_signatures_inner(&map_signature_with_base, key_and_id).await
+     self.verify_message_signatures_sync(key_and_id, req_for_param)
   }
 
-  /// Extract all signature bases contained in the response headers
+   /// Extract all signature bases contained in the request headers
   fn extract_signatures<B>(
     &self,
     req_for_param: Option<&Request<B>>,
@@ -485,116 +567,6 @@ where
   }
 }
 
-/* --------------------------------------- */
-#[cfg(feature = "blocking")]
-impl<D> MessageSignatureReqSync for Request<D>
-where
-  D: Send + Body + Sync,
-{
-  fn set_message_signature_sync<T>(
-    &mut self,
-    signature_params: &HttpSignatureParams,
-    signing_key: &T,
-    signature_name: Option<&str>,
-  ) -> Result<(), Self::Error>
-  where
-    Self: Sized,
-    T: SigningKey + Sync,
-  {
-    futures::executor::block_on(self.set_message_signature(signature_params, signing_key, signature_name))
-  }
-
-  fn set_message_signatures_sync<T>(
-    &mut self,
-    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
-  ) -> Result<(), Self::Error>
-  where
-    Self: Sized,
-    T: SigningKey + Sync,
-  {
-    futures::executor::block_on(self.set_message_signatures(params_key_name))
-  }
-
-  fn verify_message_signature_sync<T>(&self, verifying_key: &T, key_id: Option<&str>) -> Result<SignatureName, Self::Error>
-  where
-    Self: Sized,
-    T: VerifyingKey + Sync,
-  {
-    futures::executor::block_on(self.verify_message_signature(verifying_key, key_id))
-  }
-
-  fn verify_message_signatures_sync<T>(
-    &self,
-    key_and_id: &[(&T, Option<&str>)],
-  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
-  where
-    Self: Sized,
-    T: VerifyingKey + Sync,
-  {
-    futures::executor::block_on(self.verify_message_signatures(key_and_id))
-  }
-}
-
-#[cfg(feature = "blocking")]
-impl<D> MessageSignatureResSync for Response<D>
-where
-  D: Send + Body + Sync,
-{
-  fn set_message_signature_sync<T, B>(
-    &mut self,
-    signature_params: &HttpSignatureParams,
-    signing_key: &T,
-    signature_name: Option<&str>,
-    req_for_param: Option<&Request<B>>,
-  ) -> Result<(), Self::Error>
-  where
-    Self: Sized,
-    T: SigningKey + Sync,
-    B: Sync,
-  {
-    futures::executor::block_on(self.set_message_signature(signature_params, signing_key, signature_name, req_for_param))
-  }
-
-  fn set_message_signatures_sync<T, B>(
-    &mut self,
-    params_key_name: &[(&HttpSignatureParams, &T, Option<&str>)],
-    req_for_param: Option<&Request<B>>,
-  ) -> Result<(), Self::Error>
-  where
-    Self: Sized,
-    T: SigningKey + Sync,
-    B: Sync,
-  {
-    futures::executor::block_on(self.set_message_signatures(params_key_name, req_for_param))
-  }
-
-  fn verify_message_signature_sync<T, B>(
-    &self,
-    verifying_key: &T,
-    key_id: Option<&str>,
-    req_for_param: Option<&Request<B>>,
-  ) -> Result<SignatureName, Self::Error>
-  where
-    Self: Sized,
-    T: VerifyingKey + Sync,
-    B: Sync,
-  {
-    futures::executor::block_on(self.verify_message_signature(verifying_key, key_id, req_for_param))
-  }
-
-  fn verify_message_signatures_sync<T, B>(
-    &self,
-    key_and_id: &[(&T, Option<&str>)],
-    req_for_param: Option<&Request<B>>,
-  ) -> Result<Vec<Result<SignatureName, Self::Error>>, Self::Error>
-  where
-    Self: Sized,
-    T: VerifyingKey + Sync,
-    B: Sync,
-  {
-    futures::executor::block_on(self.verify_message_signatures(key_and_id, req_for_param))
-  }
-}
 
 /* --------------------------------------- */
 // inner functions
@@ -657,7 +629,7 @@ fn extract_signatures_inner<B1, B2>(
 }
 
 /// Verify multiple signatures inner function
-async fn verify_message_signatures_inner<T>(
+fn verify_message_signatures_inner<T>(
   map_signature_with_base: &IndexMap<String, (HttpSignatureBase, HttpSignatureHeaders)>,
   key_and_id: &[(&T, Option<&str>)],
 ) -> HyperSigResult<Vec<HyperSigResult<SignatureName>>>
@@ -665,7 +637,7 @@ where
   T: VerifyingKey + Sync,
 {
   // verify for each key_and_id tuple
-  let res_fut = key_and_id.iter().map(|(key, key_id)| {
+  let res = key_and_id.iter().map(|(key, key_id)| {
     let filtered = if let Some(key_id) = key_id {
       map_signature_with_base
         .iter()
@@ -676,7 +648,6 @@ where
     };
 
     // check if any one of the signature headers is valid in async manner
-    async move {
       if filtered.is_empty() {
         return Err(HyperSigError::NoSignatureHeaders(
           "No signature as appropriate target for verification".to_string(),
@@ -694,9 +665,7 @@ where
           "Invalid signature for the verifying key".to_string(),
         ))
       }
-    }
-  });
-  let res = futures::future::join_all(res_fut).await;
+  }).collect();
   Ok(res)
 }
 

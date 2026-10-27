@@ -354,7 +354,6 @@ async fn test_set_verify_multiple_signatures() {
 
 // ---- Blocking (sync) ----
 
-#[cfg(feature = "blocking")]
 #[test]
 fn test_blocking_set_verify_message_signature_req() {
   let mut req = futures::executor::block_on(build_request());
@@ -369,7 +368,6 @@ fn test_blocking_set_verify_message_signature_req() {
   assert!(verification_res.is_ok());
 }
 
-#[cfg(feature = "blocking")]
 #[test]
 fn test_blocking_set_verify_message_signature_res() {
   let req = futures::executor::block_on(build_request());
@@ -389,7 +387,6 @@ fn test_blocking_set_verify_message_signature_res() {
 // ---- Issue #17: @query-param;name="..." ----
 
 /// Regression test for issue #17: @query-param;name="id" must produce signature headers (sync)
-#[cfg(feature = "blocking")]
 #[test]
 fn test_query_param_sign_verify_sync() {
   let mut req = build_query_request();
@@ -510,7 +507,6 @@ async fn test_set_message_signature_propagates_build_error() {
   assert!(result.is_err(), "expected Err when using `@status` on request, got Ok");
 }
 
-#[cfg(feature = "blocking")]
 #[test]
 fn test_set_message_signature_sync_propagates_build_error() {
   // Same as above but for sync path
