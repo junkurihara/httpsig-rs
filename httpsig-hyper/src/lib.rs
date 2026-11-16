@@ -6,7 +6,7 @@
 //!
 //! ## Sync API
 //!
-//! A synchronous API to sign and verify requuest and responses is provided via
+//! A synchronous API to sign and verify request and responses is provided via
 //! [`MessageSignatureReqSync`] and [`MessageSignatureResSync`].
 //!
 //! ## Async API
