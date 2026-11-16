@@ -47,7 +47,7 @@ bytes = { version = "1.12.1" }
 
 
 [dev-dependencies]
-futures = { version = "0.3.31", default-features = false, features = [
+futures = { version = "0.3.33", default-features = false, features = [
   "executor",
 ] }
 tokio = { version = "1.53.1", default-features = false, features = [

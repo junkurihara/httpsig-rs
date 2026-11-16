@@ -7,7 +7,7 @@
 //! ## Sync API
 //!
 //! A synchronous API to sign and verify requuest and responses is provided via
-//! [`MessageSignatureReqSync`] and [`MessageSignatureResSync`]. 
+//! [`MessageSignatureReqSync`] and [`MessageSignatureResSync`].
 //!
 //! ## Async API
 //!
@@ -54,9 +54,9 @@ impl std::str::FromStr for ContentDigestType {
 pub use error::{HyperDigestError, HyperDigestResult, HyperSigError, HyperSigResult};
 pub use httpsig::prelude;
 pub use hyper_content_digest::{ContentDigest, RequestContentDigest, ResponseContentDigest};
-pub use hyper_http::{MessageSignature, MessageSignatureReq, MessageSignatureRes};
-#[cfg(feature = "blocking")]
-pub use hyper_http::{MessageSignatureReqSync, MessageSignatureResSync};
+pub use hyper_http::{
+  MessageSignature, MessageSignatureReq, MessageSignatureReqSync, MessageSignatureRes, MessageSignatureResSync,
+};
 
 /* ----------------------------------------------------------------- */
 #[cfg(test)]
