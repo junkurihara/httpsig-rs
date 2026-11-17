@@ -25,10 +25,6 @@ httpsig = { path = "../httpsig", version = "0.0.25" }
 
 thiserror = { version = "2.0.19" }
 tracing = { version = "0.1.44" }
-futures = { version = "0.3.33", default-features = false, features = [
-  "std",
-  "async-await",
-] }
 indexmap = { version = "2.14.0" }
 subtle = { version = "2.6.1", default-features = false }
 

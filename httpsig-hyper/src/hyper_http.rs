@@ -125,7 +125,7 @@ pub trait MessageSignatureRes {
     T: VerifyingKey + Sync,
     B: Sync;
 
-  /// Extract all signature bases contained in the request headers
+  /// Extract all signature bases contained in the response headers
   fn extract_signatures<B>(
     &self,
     req_for_param: Option<&Request<B>>,
@@ -553,7 +553,7 @@ impl<D: Send + Sync> MessageSignatureRes for Response<D> {
     self.verify_message_signatures_sync(key_and_id, req_for_param)
   }
 
-  /// Extract all signature bases contained in the request headers
+  /// Extract all signature bases contained in the response headers
   fn extract_signatures<B>(
     &self,
     req_for_param: Option<&Request<B>>,
