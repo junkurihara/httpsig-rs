@@ -47,9 +47,9 @@ sha2 = { version = "0.11.0", default-features = false }
 bytes = { version = "1.12.1" }
 
 # rsa is optional
-rsa = { version = "0.10.0-rc.18", default-features = false, optional = true, features = [
+rsa = { version = "0.10.0", default-features = false, optional = true, features = [
   "encoding",
-  "sha2",
+  "pkcs1v15",
 ] }
 
 # encoding

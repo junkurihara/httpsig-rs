@@ -16,7 +16,7 @@ use spki::SubjectPublicKeyInfoRef;
 
 #[cfg(feature = "rsa-signature")]
 use rsa::{
-  RsaPrivateKey, RsaPublicKey,
+  PrivateKey as RsaPrivateKey, PublicKey as RsaPublicKey,
   pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPublicKey},
   pkcs1v15, pss,
   signature::{Keypair, RandomizedSigner, SignatureEncoding, Verifier},
